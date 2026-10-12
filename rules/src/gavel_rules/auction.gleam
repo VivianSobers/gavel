@@ -1,8 +1,8 @@
 import gavel_rules/increment
 import gavel_rules/types.{
   type Command, type Config, type Decision, type Event, type Rejection,
-  type State, BelowMinimum, Bid, BidAccepted, Close, Emit, InvalidConfig,
-  NotOpen, NotYetEnded, Open, Opened, Pending, PlaceBid, State,
+  type State, BelowMinimum, Bid, BidAccepted, Close, Emit, InvalidAmount,
+  InvalidConfig, NotOpen, NotYetEnded, Open, Opened, Pending, PlaceBid, State,
 }
 import gleam/bool
 import gleam/dict
@@ -52,6 +52,7 @@ pub fn decide(
   case command {
     Close -> Error(NotYetEnded)
     PlaceBid(request_id, bidder, amount) -> {
+      use <- bool.guard(amount <= 0, Error(InvalidAmount))
       let minimum = minimum_next_bid(state)
       use <- bool.guard(amount < minimum, Error(BelowMinimum(minimum)))
       Ok(Emit([BidAccepted(Bid(request_id, bidder, amount, now))]))

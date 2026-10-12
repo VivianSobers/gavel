@@ -1,7 +1,7 @@
 import gavel_rules/auction
 import gavel_rules/types.{
-  type Config, BelowMinimum, Bid, BidAccepted, Close, Config, Emit, NotOpen,
-  NotYetEnded, Opened, PlaceBid,
+  type Config, BelowMinimum, Bid, BidAccepted, Close, Config, Emit,
+  InvalidAmount, NotOpen, NotYetEnded, Opened, PlaceBid,
 }
 import gleam/dict
 import gleam/option.{Some}
@@ -94,4 +94,20 @@ pub fn bid_one_cent_below_minimum_with_high_bid_rejected_test() {
 
   let command = PlaceBid(request_id: "req-2", bidder: "charlie", amount: 1099)
   assert auction.decide(state, command, 20_000) == Error(BelowMinimum(1100))
+}
+
+pub fn bid_zero_amount_rejected_test() {
+  let config = sample_config(1000)
+  let state = auction.fold([Opened(config)])
+  let command = PlaceBid(request_id: "req-1", bidder: "bob", amount: 0)
+
+  assert auction.decide(state, command, 10_000) == Error(InvalidAmount)
+}
+
+pub fn bid_negative_amount_rejected_test() {
+  let config = sample_config(1000)
+  let state = auction.fold([Opened(config)])
+  let command = PlaceBid(request_id: "req-1", bidder: "bob", amount: -1)
+
+  assert auction.decide(state, command, 10_000) == Error(InvalidAmount)
 }
