@@ -5,6 +5,7 @@ defmodule Gavel.Store do
 
   import Ecto.Query
 
+  alias Gavel.Clock
   alias Gavel.Repo
   alias Gavel.Rules
   alias Gavel.Rules.Config
@@ -26,7 +27,8 @@ defmodule Gavel.Store do
   @doc """
   Appends events for an auction starting at `expected_seq + 1` in one transaction.
   Returns `{:ok, new_seq}` on success or `{:error, :conflict}` on a unique violation
-  on the sequence primary key or request id index.
+  on the sequence primary key or request id index. Appending a `:closed` event sets
+  `auctions.closed_at` in the same transaction.
   """
   @spec append(binary(), integer(), [Event.t()]) :: {:ok, integer()} | {:error, :conflict}
   def append(auction_id, expected_seq, events) do
@@ -44,6 +46,13 @@ defmodule Gavel.Store do
           request_id: request_id
         })
       end)
+
+      if Enum.any?(events, &(&1.type == :closed)) do
+        closed_at = DateTime.from_unix!(Clock.now_ms() * 1_000, :microsecond)
+
+        from(a in AuctionRecord, where: a.id == ^auction_id)
+        |> Repo.update_all(set: [closed_at: closed_at])
+      end
 
       expected_seq + length(events)
     end)

@@ -1,6 +1,7 @@
 defmodule Gavel.StoreTest do
   use Gavel.DataCase, async: true
 
+  alias Gavel.Clock
   alias Gavel.Rules.Bid
   alias Gavel.Rules.Config
   alias Gavel.Rules.Event
@@ -306,6 +307,49 @@ defmodule Gavel.StoreTest do
 
       assert {:ok, [_opened, stored_event]} = Store.load(auction_id)
       assert stored_event == event1
+    end
+
+    test "appending a :closed event sets auctions.closed_at", %{auction_id: auction_id} do
+      Clock.Test.set(1_700_000_100_000)
+
+      event = %Event{
+        type: :closed,
+        winner: %Bid{
+          request_id: "req-1",
+          bidder: "bob",
+          amount: 200,
+          at: 500
+        }
+      }
+
+      assert {:ok, 2} = Store.append(auction_id, 1, [event])
+
+      auction = Repo.get!(AuctionRecord, auction_id)
+      assert auction.closed_at == ~U[2023-11-14 22:15:00.000000Z]
+    end
+
+    test "a conflicting close leaves auctions.closed_at null", %{auction_id: auction_id} do
+      prior_event = %Event{
+        type: :bid_accepted,
+        bid: %Bid{
+          request_id: "req-1",
+          bidder: "bob",
+          amount: 200,
+          at: 500
+        }
+      }
+
+      assert {:ok, 2} = Store.append(auction_id, 1, [prior_event])
+
+      close_event = %Event{
+        type: :closed,
+        winner: nil
+      }
+
+      assert Store.append(auction_id, 1, [close_event]) == {:error, :conflict}
+
+      auction = Repo.get!(AuctionRecord, auction_id)
+      assert auction.closed_at == nil
     end
   end
 end
