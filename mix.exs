@@ -84,7 +84,8 @@ defmodule Gavel.MixProject do
       setup: ["deps.get", "ecto.setup", "assets.setup", "assets.build"],
       "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
-      test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
+      compile: [&gleam_build/1, "compile"],
+      test: [&gleam_build/1, "ecto.create --quiet", "ecto.migrate --quiet", "test"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       "assets.build": ["compile", "tailwind gavel", "esbuild gavel"],
       "assets.deploy": [
@@ -94,5 +95,23 @@ defmodule Gavel.MixProject do
       ],
       precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
     ]
+  end
+
+  defp gleam_build(_args) do
+    case System.cmd("gleam", ["export", "erlang-shipment"], cd: "rules", into: IO.stream()) do
+      {_, 0} ->
+        ebin_dir = Mix.Project.compile_path()
+        File.mkdir_p!(ebin_dir)
+
+        for file <- Path.wildcard("rules/build/erlang-shipment/*/ebin/*.beam") do
+          File.cp!(file, Path.join(ebin_dir, Path.basename(file)))
+        end
+
+        :code.add_patha(String.to_charlist(ebin_dir))
+        :ok
+
+      {_, exit_code} ->
+        raise "gleam build failed with exit code #{exit_code}"
+    end
   end
 end
