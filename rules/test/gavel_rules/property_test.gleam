@@ -1,6 +1,7 @@
 import gavel_rules/support/gen
 import gavel_rules/types.{Emit}
 import gleam/list
+import gleam/option.{None, Some}
 import qcheck
 
 pub fn run_sanity_property_test() {
@@ -19,4 +20,22 @@ pub fn run_sanity_property_test() {
     Error(_) -> 1
   }
   assert final_seq == 1 + total_emitted
+}
+
+pub fn high_bid_never_decreases_property_test() {
+  use #(config, steps) <- qcheck.given(gen.scenario())
+  let history = gen.run(config, steps)
+  use #(before, _command, _now, _outcome, after) <- list.each(history)
+  case before.high_bid, after.high_bid {
+    Some(b1), Some(b2) -> {
+      assert b2.amount >= b1.amount
+      Nil
+    }
+    Some(_), None -> panic as "high bid disappeared"
+    None, Some(b) -> {
+      assert b.amount >= config.starting_price
+      Nil
+    }
+    None, None -> Nil
+  }
 }
