@@ -68,6 +68,9 @@ defmodule Gavel.Auction.Server do
             {:stop, :normal, {:error, :stale}, state}
         end
 
+      {:duplicate, bid} ->
+        {:reply, {:duplicate, bid, view}, state}
+
       {:error, rejection} ->
         {:reply, {:rejected, rejection}, state}
     end
