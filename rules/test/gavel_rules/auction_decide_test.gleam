@@ -1,8 +1,8 @@
 import gavel_rules/auction
 import gavel_rules/types.{
-  type Config, AlreadyHighBidder, AuctionClosed, BelowMinimum, Bid, BidAccepted,
-  Close, Config, Duplicate, Emit, Extended, InvalidAmount, NotOpen, NotYetEnded,
-  Opened, PlaceBid, SellerCannotBid, TooLate,
+  type Config, AlreadyClosed, AlreadyHighBidder, AuctionClosed, BelowMinimum,
+  Bid, BidAccepted, Close, Config, Duplicate, Emit, Extended, InvalidAmount,
+  NotOpen, NotYetEnded, Opened, PlaceBid, SellerCannotBid, TooLate,
 }
 import gleam/dict
 import gleam/option.{None, Some}
@@ -394,4 +394,49 @@ pub fn close_with_high_bid_above_reserve_sets_winner_test() {
 
   assert auction.decide(state, Close, state.ends_at)
     == Ok(Emit([AuctionClosed(Some(bid))]))
+}
+
+pub fn place_bid_on_closed_auction_returns_already_closed_test() {
+  let config = sample_config(1000)
+  let bid = Bid("req-1", "bob", 1000, 10_000)
+  let state =
+    auction.fold([Opened(config), BidAccepted(bid), AuctionClosed(Some(bid))])
+  let command = PlaceBid(request_id: "req-2", bidder: "charlie", amount: 1100)
+
+  assert auction.decide(state, command, state.ends_at + 10_000)
+    == Error(AlreadyClosed)
+}
+
+pub fn place_bid_on_closed_auction_before_end_time_returns_already_closed_test() {
+  let config = sample_config(1000)
+  let state = auction.fold([Opened(config), AuctionClosed(None)])
+  let command = PlaceBid(request_id: "req-1", bidder: "bob", amount: 1000)
+
+  assert auction.decide(state, command, 10_000) == Error(AlreadyClosed)
+}
+
+pub fn close_on_closed_auction_returns_already_closed_test() {
+  let config = sample_config(1000)
+  let state = auction.fold([Opened(config), AuctionClosed(None)])
+
+  assert auction.decide(state, Close, state.ends_at + 10_000)
+    == Error(AlreadyClosed)
+}
+
+pub fn close_on_closed_auction_before_end_time_returns_already_closed_test() {
+  let config = sample_config(1000)
+  let state = auction.fold([Opened(config), AuctionClosed(None)])
+
+  assert auction.decide(state, Close, 10_000) == Error(AlreadyClosed)
+}
+
+pub fn duplicate_bid_after_close_returns_duplicate_test() {
+  let config = sample_config(1000)
+  let bid = Bid("req-1", "bob", 1000, 10_000)
+  let state =
+    auction.fold([Opened(config), BidAccepted(bid), AuctionClosed(Some(bid))])
+  let command = PlaceBid(request_id: "req-1", bidder: "bob", amount: 1000)
+
+  assert auction.decide(state, command, state.ends_at + 10_000)
+    == Ok(Duplicate(bid))
 }

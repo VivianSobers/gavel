@@ -1,10 +1,10 @@
 import gavel_rules/increment
 import gavel_rules/types.{
   type Bid, type Command, type Config, type Decision, type Event, type Rejection,
-  type State, AlreadyHighBidder, AuctionClosed, BelowMinimum, Bid, BidAccepted,
-  Close, Closed, Duplicate, Emit, Extended, InvalidAmount, InvalidConfig,
-  NotOpen, NotYetEnded, Open, Opened, Pending, PlaceBid, SellerCannotBid, State,
-  TooLate,
+  type State, AlreadyClosed, AlreadyHighBidder, AuctionClosed, BelowMinimum, Bid,
+  BidAccepted, Close, Closed, Duplicate, Emit, Extended, InvalidAmount,
+  InvalidConfig, NotOpen, NotYetEnded, Open, Opened, Pending, PlaceBid,
+  SellerCannotBid, State, TooLate,
 }
 import gleam/bool
 import gleam/dict
@@ -69,6 +69,7 @@ pub fn decide(
 }
 
 fn decide_close(state: State, now: Int) -> Result(Decision, Rejection) {
+  use <- bool.guard(state.status == Closed, Error(AlreadyClosed))
   use <- bool.guard(now < state.ends_at, Error(NotYetEnded))
   let winner = resolve_winner(state)
   Ok(Emit([AuctionClosed(winner)]))
@@ -102,6 +103,7 @@ fn decide_place_bid(
   amount: Int,
   now: Int,
 ) -> Result(Decision, Rejection) {
+  use <- bool.guard(state.status == Closed, Error(AlreadyClosed))
   use <- bool.guard(now >= state.ends_at, Error(TooLate))
   use <- bool.guard(is_seller(state, bidder), Error(SellerCannotBid))
   use <- bool.guard(is_high_bidder(state, bidder), Error(AlreadyHighBidder))
