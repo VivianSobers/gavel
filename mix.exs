@@ -71,7 +71,8 @@ defmodule Gavel.MixProject do
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:libring, "~> 1.7"}
+      {:libring, "~> 1.7"},
+      {:stream_data, "~> 1.4", only: :test}
     ]
   end
 
