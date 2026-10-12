@@ -1,13 +1,32 @@
 import gavel_rules/types.{
-  type Config, type Event, type Rejection, type State, InvalidConfig, Opened,
-  Pending, State,
+  type Config, type Event, type Rejection, type State, InvalidConfig, Open,
+  Opened, Pending, State,
 }
 import gleam/bool
 import gleam/dict
-import gleam/option.{None}
+import gleam/list
+import gleam/option.{None, Some}
 
 pub fn new() -> State {
   State(None, Pending, None, [], dict.new(), 0, 0, 0)
+}
+
+pub fn evolve(state: State, event: Event) -> State {
+  case event {
+    Opened(c) ->
+      State(
+        ..state,
+        config: Some(c),
+        status: Open,
+        ends_at: c.ends_at,
+        seq: state.seq + 1,
+      )
+    _ -> State(..state, seq: state.seq + 1)
+  }
+}
+
+pub fn fold(events: List(Event)) -> State {
+  list.fold(events, new(), evolve)
 }
 
 pub fn open(config: Config) -> Result(List(Event), Rejection) {
