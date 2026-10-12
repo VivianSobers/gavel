@@ -4,7 +4,7 @@ export HOST_UID HOST_GID
 DC  := docker compose
 RUN := $(DC) run --rm dev
 
-.PHONY: image toolchain mix gleam gleam-test db-up db-down db-reset deps test
+.PHONY: image toolchain mix gleam gleam-test db-up db-down db-reset deps test release-image release-smoke
 
 image:
 	$(DC) build dev
@@ -35,4 +35,10 @@ deps:
 
 test: db-up
 	$(RUN) mix test
+
+release-image:
+	docker build -t gavel:local .
+
+release-smoke: release-image
+	out=$$(docker run --rm -e DATABASE_URL=ecto://u:p@nowhere/db -e SECRET_KEY_BASE=$$(printf '%064d' 0) gavel:local bin/gavel eval 'IO.puts(:gavel_rules.version())') && test "$$out" = "0.1.0" && echo "$$out"
 
