@@ -15,6 +15,10 @@ defmodule GavelWeb.Router do
   end
 
   scope "/", GavelWeb do
+    get "/healthz", HealthController, :index
+  end
+
+  scope "/", GavelWeb do
     pipe_through :browser
 
     get "/", PageController, :home
