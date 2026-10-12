@@ -1,7 +1,7 @@
 import gavel_rules/auction
 import gavel_rules/types.{
-  type Config, BelowMinimum, Bid, BidAccepted, Close, Config, Emit,
-  InvalidAmount, NotOpen, NotYetEnded, Opened, PlaceBid, SellerCannotBid,
+  type Config, AlreadyHighBidder, BelowMinimum, Bid, BidAccepted, Close, Config,
+  Emit, InvalidAmount, NotOpen, NotYetEnded, Opened, PlaceBid, SellerCannotBid,
 }
 import gleam/dict
 import gleam/option.{Some}
@@ -127,4 +127,25 @@ pub fn seller_cannot_bid_even_with_existing_high_bid_test() {
   let command = PlaceBid(request_id: "req-2", bidder: "alice", amount: 1100)
 
   assert auction.decide(state, command, 20_000) == Error(SellerCannotBid)
+}
+
+pub fn high_bidder_cannot_raise_own_bid_test() {
+  let config = sample_config(1000)
+  let bid1 = Bid("req-1", "bob", 1000, 10_000)
+  let state = auction.fold([Opened(config), BidAccepted(bid1)])
+  let command = PlaceBid(request_id: "req-2", bidder: "bob", amount: 1100)
+
+  assert auction.decide(state, command, 20_000) == Error(AlreadyHighBidder)
+}
+
+pub fn outbid_bidder_can_bid_again_test() {
+  let config = sample_config(1000)
+  let bid1 = Bid("req-1", "bob", 1000, 10_000)
+  let bid2 = Bid("req-2", "charlie", 1100, 20_000)
+  let state =
+    auction.fold([Opened(config), BidAccepted(bid1), BidAccepted(bid2)])
+  let command = PlaceBid(request_id: "req-3", bidder: "bob", amount: 1200)
+
+  assert auction.decide(state, command, 30_000)
+    == Ok(Emit([BidAccepted(Bid("req-3", "bob", 1200, 30_000))]))
 }
