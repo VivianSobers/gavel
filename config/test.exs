@@ -21,6 +21,7 @@ config :gavel, GavelWeb.Endpoint,
   server: false
 
 config :gavel, clock: Gavel.Clock.Test
+config :gavel, linger_ms: 50
 
 # Print only warnings and errors during test
 config :logger, level: :warning

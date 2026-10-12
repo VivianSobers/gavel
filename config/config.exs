@@ -9,7 +9,8 @@ import Config
 
 config :gavel,
   ecto_repos: [Gavel.Repo],
-  generators: [timestamp_type: :utc_datetime, binary_id: true]
+  generators: [timestamp_type: :utc_datetime, binary_id: true],
+  linger_ms: 30_000
 
 # Configure the endpoint
 config :gavel, GavelWeb.Endpoint,

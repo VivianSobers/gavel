@@ -29,8 +29,14 @@ defmodule Gavel.Auction.Server do
 
   @impl true
   def init(auction_id) do
-    {:ok, %{auction_id: auction_id, rules_state: nil, view: nil, timer_ref: nil},
-     {:continue, :load}}
+    {:ok,
+     %{
+       auction_id: auction_id,
+       rules_state: nil,
+       view: nil,
+       timer_ref: nil,
+       linger_ref: nil
+     }, {:continue, :load}}
   end
 
   @impl true
@@ -88,6 +94,12 @@ defmodule Gavel.Auction.Server do
     end
   end
 
+  def handle_info(:linger_stop, %{view: %{status: :closed}} = state) do
+    {:stop, :normal, state}
+  end
+
+  def handle_info(:linger_stop, state), do: {:noreply, state}
+
   defp close_if_due(state, now) do
     with true <- state.view.status == :open and now >= state.view.ends_at,
          {:emit, events} <- Rules.decide(state.rules_state, :close, now) do
@@ -119,7 +131,8 @@ defmodule Gavel.Auction.Server do
 
   defp schedule_close_timer(%{timer_ref: timer_ref, view: %{status: :closed}} = state) do
     if timer_ref, do: Process.cancel_timer(timer_ref)
-    %{state | timer_ref: nil}
+    linger_ref = schedule_linger(state)
+    %{state | timer_ref: nil, linger_ref: linger_ref}
   end
 
   defp schedule_close_timer(%{timer_ref: timer_ref, view: %{ends_at: ends_at}} = state) do
@@ -127,6 +140,16 @@ defmodule Gavel.Auction.Server do
     # send_after rejects delays above 2^32 - 1 ms; a capped timer just re-checks.
     delay = ends_at |> Kernel.-(Clock.now_ms()) |> max(0) |> min(@max_timer_ms)
     %{state | timer_ref: Process.send_after(self(), :close_due, delay)}
+  end
+
+  defp schedule_linger(%{linger_ref: linger_ref}) when not is_nil(linger_ref), do: linger_ref
+
+  defp schedule_linger(_state) do
+    Process.send_after(self(), :linger_stop, linger_ms())
+  end
+
+  defp linger_ms do
+    Application.get_env(:gavel, :linger_ms, 30_000)
   end
 
   defp apply_events(rules_state, events) do
