@@ -4,7 +4,7 @@ export HOST_UID HOST_GID
 DC  := docker compose
 RUN := $(DC) run --rm dev
 
-.PHONY: image toolchain mix gleam db-up db-down db-reset
+.PHONY: image toolchain mix gleam db-up db-down db-reset deps test
 
 image:
 	$(DC) build dev
@@ -26,3 +26,10 @@ db-down:
 
 db-reset:
 	$(DC) down -v
+
+deps:
+	$(RUN) mix deps.get
+
+test: db-up
+	$(RUN) mix test
+
