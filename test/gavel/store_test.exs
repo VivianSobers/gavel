@@ -352,4 +352,42 @@ defmodule Gavel.StoreTest do
       assert auction.closed_at == nil
     end
   end
+
+  describe "open_auction_ids/0" do
+    test "returns ids of auctions where closed_at is nil" do
+      open_config = %Config{
+        title: "Open Auction",
+        seller: "alice",
+        starting_price: 100,
+        reserve: nil,
+        ends_at: 1_000,
+        snipe_window_ms: 10,
+        extension_ms: 5,
+        max_extensions: 2
+      }
+
+      closed_config = %Config{
+        title: "Closed Auction",
+        seller: "bob",
+        starting_price: 200,
+        reserve: nil,
+        ends_at: 2_000,
+        snipe_window_ms: 10,
+        extension_ms: 5,
+        max_extensions: 2
+      }
+
+      {:ok, open_id} = Store.create_auction(open_config)
+      {:ok, closed_id} = Store.create_auction(closed_config)
+
+      close_event = %Event{
+        type: :closed,
+        winner: nil
+      }
+
+      assert {:ok, 2} = Store.append(closed_id, 1, [close_event])
+
+      assert Store.open_auction_ids() == [open_id]
+    end
+  end
 end

@@ -87,6 +87,19 @@ defmodule Gavel.Store do
     end
   end
 
+  @doc """
+  Lists the IDs of all auctions that have not been closed (`closed_at IS NULL`).
+  """
+  @spec open_auction_ids() :: [binary()]
+  def open_auction_ids do
+    Repo.all(
+      from(a in AuctionRecord,
+        where: is_nil(a.closed_at),
+        select: a.id
+      )
+    )
+  end
+
   defp insert_auction_and_opened(%Config{} = config, %Event{} = opened_event) do
     {type, payload, request_id} = Codec.encode(opened_event)
 
