@@ -1,3 +1,4 @@
+import gavel_rules/increment
 import gavel_rules/types.{
   type Config, type Event, type Rejection, type State, InvalidConfig, Open,
   Opened, Pending, State,
@@ -6,6 +7,14 @@ import gleam/bool
 import gleam/dict
 import gleam/list
 import gleam/option.{None, Some}
+
+pub fn minimum_next_bid(state: State) -> Int {
+  case state.config, state.high_bid {
+    None, _ -> 0
+    Some(config), None -> config.starting_price
+    Some(_), Some(high) -> high.amount + increment.increment(high.amount)
+  }
+}
 
 pub fn new() -> State {
   State(None, Pending, None, [], dict.new(), 0, 0, 0)
