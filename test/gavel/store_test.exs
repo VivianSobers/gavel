@@ -167,4 +167,115 @@ defmodule Gavel.StoreTest do
       assert loaded3 == event3
     end
   end
+
+  describe "append/3" do
+    setup do
+      config = %Config{
+        title: "Vintage Watch",
+        seller: "alice",
+        starting_price: 100,
+        reserve: nil,
+        ends_at: 1_000,
+        snipe_window_ms: 10,
+        extension_ms: 5,
+        max_extensions: 2
+      }
+
+      {:ok, auction_id} = Store.create_auction(config)
+      %{auction_id: auction_id}
+    end
+
+    test "append at 1 returns {:ok, 2} and persists event", %{auction_id: auction_id} do
+      event = %Event{
+        type: :bid_accepted,
+        bid: %Bid{
+          request_id: "req-1",
+          bidder: "bob",
+          amount: 200,
+          at: 500
+        }
+      }
+
+      assert {:ok, 2} = Store.append(auction_id, 1, [event])
+      assert {:ok, [_opened, loaded_event]} = Store.load(auction_id)
+      assert loaded_event == event
+    end
+
+    test "second append at 1 returns {:error, :conflict}", %{auction_id: auction_id} do
+      event1 = %Event{
+        type: :bid_accepted,
+        bid: %Bid{
+          request_id: "req-1",
+          bidder: "bob",
+          amount: 200,
+          at: 500
+        }
+      }
+
+      event2 = %Event{
+        type: :bid_accepted,
+        bid: %Bid{
+          request_id: "req-2",
+          bidder: "charlie",
+          amount: 300,
+          at: 600
+        }
+      }
+
+      assert {:ok, 2} = Store.append(auction_id, 1, [event1])
+      assert Store.append(auction_id, 1, [event2]) == {:error, :conflict}
+
+      assert {:ok, [_opened, stored_event]} = Store.load(auction_id)
+      assert stored_event == event1
+    end
+
+    test "two-event batch whose second seq collides stores neither", %{auction_id: auction_id} do
+      colliding_event = %Event{
+        type: :bid_accepted,
+        bid: %Bid{
+          request_id: "req-preexisting",
+          bidder: "dan",
+          amount: 400,
+          at: 700
+        }
+      }
+
+      {type3, payload3, req3} = Codec.encode(colliding_event)
+
+      Repo.insert!(%EventRecord{
+        auction_id: auction_id,
+        seq: 3,
+        type: type3,
+        payload: payload3,
+        request_id: req3
+      })
+
+      batch_event1 = %Event{
+        type: :bid_accepted,
+        bid: %Bid{
+          request_id: "req-batch-1",
+          bidder: "bob",
+          amount: 200,
+          at: 500
+        }
+      }
+
+      batch_event2 = %Event{
+        type: :bid_accepted,
+        bid: %Bid{
+          request_id: "req-batch-2",
+          bidder: "charlie",
+          amount: 300,
+          at: 600
+        }
+      }
+
+      assert Store.append(auction_id, 1, [batch_event1, batch_event2]) == {:error, :conflict}
+
+      assert Repo.get_by(EventRecord, auction_id: auction_id, seq: 2) == nil
+      assert {:ok, [loaded1, loaded3]} = Store.load(auction_id)
+      assert loaded1.type == :opened
+      assert loaded3 == colliding_event
+    end
+  end
 end

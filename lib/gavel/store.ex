@@ -24,6 +24,38 @@ defmodule Gavel.Store do
   end
 
   @doc """
+  Appends events for an auction starting at `expected_seq + 1` in one transaction.
+  Returns `{:ok, new_seq}` on success or `{:error, :conflict}` on a unique violation on the primary key.
+  """
+  @spec append(binary(), integer(), [Event.t()]) :: {:ok, integer()} | {:error, :conflict}
+  def append(auction_id, expected_seq, events) do
+    Repo.transaction(fn ->
+      events
+      |> Enum.with_index(expected_seq + 1)
+      |> Enum.each(fn {event, seq} ->
+        {type, payload, request_id} = Codec.encode(event)
+
+        Repo.insert!(%EventRecord{
+          auction_id: auction_id,
+          seq: seq,
+          type: type,
+          payload: payload,
+          request_id: request_id
+        })
+      end)
+
+      expected_seq + length(events)
+    end)
+  rescue
+    e in Ecto.ConstraintError ->
+      if e.type == :unique and e.constraint == "events_pkey" do
+        {:error, :conflict}
+      else
+        reraise e, __STACKTRACE__
+      end
+  end
+
+  @doc """
   Loads events for an auction ordered by sequence number.
   """
   @spec load(binary()) :: {:ok, [Event.t()]} | {:error, :not_found}
