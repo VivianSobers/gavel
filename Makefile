@@ -40,7 +40,7 @@ fmt:
 	$(RUN) sh -c 'mix format && cd rules && gleam format'
 
 check: db-up
-	$(RUN) sh -c 'mix format --check-formatted && (cd rules && gleam format --check && gleam test) && mix compile --warnings-as-errors && mix test'
+	$(RUN) sh -c 'mix format --check-formatted && (cd rules && gleam format --check && gleam test) && mix credo --strict && mix compile --warnings-as-errors && mix test'
 
 release-image:
 	docker build -t gavel:local .
