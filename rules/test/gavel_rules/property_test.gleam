@@ -1,5 +1,6 @@
+import gavel_rules/auction
 import gavel_rules/support/gen
-import gavel_rules/types.{Emit}
+import gavel_rules/types.{BidAccepted, Emit}
 import gleam/list
 import gleam/option.{None, Some}
 import qcheck
@@ -37,5 +38,24 @@ pub fn high_bid_never_decreases_property_test() {
       Nil
     }
     None, None -> Nil
+  }
+}
+
+pub fn accepted_bids_meet_minimum_property_test() {
+  use #(config, steps) <- qcheck.given(gen.scenario())
+  let history = gen.run(config, steps)
+  use #(before, _command, _now, outcome, _after) <- list.each(history)
+  case outcome {
+    Ok(Emit(events)) -> {
+      use event <- list.each(events)
+      case event {
+        BidAccepted(b) -> {
+          assert b.amount >= auction.minimum_next_bid(before)
+          Nil
+        }
+        _ -> Nil
+      }
+    }
+    _ -> Nil
   }
 }
