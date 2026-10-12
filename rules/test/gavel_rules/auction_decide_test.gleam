@@ -1,8 +1,8 @@
 import gavel_rules/auction
 import gavel_rules/types.{
   type Config, AlreadyHighBidder, BelowMinimum, Bid, BidAccepted, Close, Config,
-  Duplicate, Emit, InvalidAmount, NotOpen, NotYetEnded, Opened, PlaceBid,
-  SellerCannotBid, TooLate,
+  Duplicate, Emit, Extended, InvalidAmount, NotOpen, NotYetEnded, Opened,
+  PlaceBid, SellerCannotBid, TooLate,
 }
 import gleam/dict
 import gleam/option.{Some}
@@ -157,7 +157,12 @@ pub fn bid_just_before_end_time_accepted_test() {
   let command = PlaceBid(request_id: "req-1", bidder: "bob", amount: 1000)
 
   assert auction.decide(state, command, state.ends_at - 1)
-    == Ok(Emit([BidAccepted(Bid("req-1", "bob", 1000, state.ends_at - 1))]))
+    == Ok(
+      Emit([
+        BidAccepted(Bid("req-1", "bob", 1000, state.ends_at - 1)),
+        Extended(state.ends_at - 1 + config.extension_ms),
+      ]),
+    )
 }
 
 pub fn bid_at_end_time_rejected_test() {
@@ -203,4 +208,54 @@ pub fn same_request_after_later_bid_returns_duplicate_test() {
   let command = PlaceBid(request_id: "req-1", bidder: "bob", amount: 1000)
 
   assert auction.decide(state, command, 30_000) == Ok(Duplicate(bid1))
+}
+
+pub fn bid_just_inside_snipe_window_extends_test() {
+  let config = sample_config(1000)
+  let state = auction.fold([Opened(config)])
+  let command = PlaceBid(request_id: "req-1", bidder: "bob", amount: 1000)
+  let now = state.ends_at - config.snipe_window_ms
+
+  assert auction.decide(state, command, now)
+    == Ok(
+      Emit([
+        BidAccepted(Bid("req-1", "bob", 1000, now)),
+        Extended(now + config.extension_ms),
+      ]),
+    )
+}
+
+pub fn bid_just_outside_snipe_window_does_not_extend_test() {
+  let config = sample_config(1000)
+  let state = auction.fold([Opened(config)])
+  let command = PlaceBid(request_id: "req-1", bidder: "bob", amount: 1000)
+  let now = state.ends_at - config.snipe_window_ms - 1
+
+  assert auction.decide(state, command, now)
+    == Ok(Emit([BidAccepted(Bid("req-1", "bob", 1000, now))]))
+}
+
+pub fn extension_never_shortens_test() {
+  let config =
+    Config(..sample_config(1000), snipe_window_ms: 60_000, extension_ms: 30_000)
+  let state = auction.fold([Opened(config)])
+  let command = PlaceBid(request_id: "req-1", bidder: "bob", amount: 1000)
+  // now is 50s before ends_at, inside the 60s window.
+  // now + extension_ms = ends_at - 50s + 30s = ends_at - 20s <= ends_at.
+  let now = state.ends_at - 50_000
+
+  assert auction.decide(state, command, now)
+    == Ok(Emit([BidAccepted(Bid("req-1", "bob", 1000, now))]))
+}
+
+pub fn extension_equal_to_ends_at_does_not_extend_test() {
+  let config =
+    Config(..sample_config(1000), snipe_window_ms: 60_000, extension_ms: 30_000)
+  let state = auction.fold([Opened(config)])
+  let command = PlaceBid(request_id: "req-1", bidder: "bob", amount: 1000)
+  // now + extension_ms == state.ends_at
+  let now = state.ends_at - 30_000
+
+  assert auction.decide(state, command, now)
+    == Ok(Emit([BidAccepted(Bid("req-1", "bob", 1000, now))]))
 }

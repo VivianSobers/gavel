@@ -2,8 +2,8 @@ import gavel_rules/increment
 import gavel_rules/types.{
   type Command, type Config, type Decision, type Event, type Rejection,
   type State, AlreadyHighBidder, BelowMinimum, Bid, BidAccepted, Close,
-  Duplicate, Emit, InvalidAmount, InvalidConfig, NotOpen, NotYetEnded, Open,
-  Opened, Pending, PlaceBid, SellerCannotBid, State, TooLate,
+  Duplicate, Emit, Extended, InvalidAmount, InvalidConfig, NotOpen, NotYetEnded,
+  Open, Opened, Pending, PlaceBid, SellerCannotBid, State, TooLate,
 }
 import gleam/bool
 import gleam/dict
@@ -40,6 +40,13 @@ pub fn evolve(state: State, event: Event) -> State {
         accepted: dict.insert(state.accepted, b.request_id, b),
         seq: state.seq + 1,
       )
+    Extended(t) ->
+      State(
+        ..state,
+        ends_at: t,
+        extensions_used: state.extensions_used + 1,
+        seq: state.seq + 1,
+      )
     _ -> State(..state, seq: state.seq + 1)
   }
 }
@@ -73,7 +80,24 @@ fn decide_place_bid(
   use <- bool.guard(amount <= 0, Error(InvalidAmount))
   let minimum = minimum_next_bid(state)
   use <- bool.guard(amount < minimum, Error(BelowMinimum(minimum)))
-  Ok(Emit([BidAccepted(Bid(request_id, bidder, amount, now))]))
+  let events = [
+    BidAccepted(Bid(request_id, bidder, amount, now)),
+    ..maybe_extend(state, now)
+  ]
+  Ok(Emit(events))
+}
+
+fn maybe_extend(state: State, now: Int) -> List(Event) {
+  case state.config {
+    None -> []
+    Some(config) -> {
+      let in_window = state.ends_at - now <= config.snipe_window_ms
+      use <- bool.guard(!in_window, [])
+      let new_ends_at = now + config.extension_ms
+      use <- bool.guard(new_ends_at <= state.ends_at, [])
+      [Extended(new_ends_at)]
+    }
+  }
 }
 
 pub fn fold(events: List(Event)) -> State {

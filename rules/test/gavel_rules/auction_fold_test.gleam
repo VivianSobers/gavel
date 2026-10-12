@@ -55,6 +55,16 @@ pub fn evolve_opened_event_test() {
     )
 }
 
+pub fn evolve_extended_event_test() {
+  let config = sample_config()
+  let open_state = auction.evolve(auction.new(), Opened(config))
+  let state = auction.evolve(open_state, Extended(1_700_000_120_000))
+
+  assert state.ends_at == 1_700_000_120_000
+  assert state.extensions_used == 1
+  assert state.seq == 2
+}
+
 pub fn evolve_other_events_increment_seq_only_test() {
   let config = sample_config()
   let open_state = auction.evolve(auction.new(), Opened(config))
@@ -70,7 +80,8 @@ pub fn evolve_other_events_increment_seq_only_test() {
   let after_extended = auction.evolve(after_bid, Extended(1_700_000_120_000))
   assert after_extended.seq == 3
   assert after_extended.status == Open
-  assert after_extended.ends_at == config.ends_at
+  assert after_extended.ends_at == 1_700_000_120_000
+  assert after_extended.extensions_used == 1
 
   let after_closed = auction.evolve(after_extended, AuctionClosed(Some(bid)))
   assert after_closed.seq == 4
@@ -91,6 +102,7 @@ pub fn fold_multiple_events_test() {
 
   assert state.status == Open
   assert state.seq == 4
-  assert state.ends_at == config.ends_at
+  assert state.ends_at == 1_700_000_120_000
+  assert state.extensions_used == 1
   assert state.config == Some(config)
 }
