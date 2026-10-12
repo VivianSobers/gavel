@@ -40,11 +40,16 @@ defmodule Gavel.Auction.Server do
         rules_state = Rules.fold(events)
         view = Rules.view(rules_state)
 
-        new_state =
-          %{state | rules_state: rules_state, view: view}
-          |> schedule_close_timer()
+        case close_if_due(%{state | rules_state: rules_state, view: view}, Clock.now_ms()) do
+          {:ok, new_state, _events} ->
+            {:noreply, new_state}
 
-        {:noreply, new_state}
+          {:scheduled, new_state} ->
+            {:noreply, new_state}
+
+          :stale ->
+            {:stop, :normal, state}
+        end
 
       {:error, :not_found} ->
         {:stop, {:shutdown, :not_found}, state}
@@ -76,16 +81,22 @@ defmodule Gavel.Auction.Server do
   def handle_info(:close_due, %{view: %{status: :closed}} = state), do: {:noreply, state}
 
   def handle_info(:close_due, state) do
-    now = Clock.now_ms()
+    case close_if_due(state, Clock.now_ms()) do
+      {:ok, new_state, _events} -> {:noreply, new_state}
+      {:scheduled, new_state} -> {:noreply, new_state}
+      :stale -> {:stop, :normal, state}
+    end
+  end
 
-    with true <- now >= state.view.ends_at,
+  defp close_if_due(state, now) do
+    with true <- state.view.status == :open and now >= state.view.ends_at,
          {:emit, events} <- Rules.decide(state.rules_state, :close, now) do
       case commit(events, state) do
-        {:ok, new_state} -> {:noreply, new_state}
-        :stale -> {:stop, :normal, state}
+        {:ok, new_state} -> {:ok, new_state, events}
+        :stale -> :stale
       end
     else
-      _ -> {:noreply, schedule_close_timer(state)}
+      _ -> {:scheduled, schedule_close_timer(state)}
     end
   end
 

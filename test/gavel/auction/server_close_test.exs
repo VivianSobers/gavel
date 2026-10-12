@@ -116,6 +116,9 @@ defmodule Gavel.Auction.ServerCloseTest do
 
   test "Local.command(id, :close) returns {:rejected, :already_closed} when already closed",
        %{auction_id: auction_id, ends_at: ends_at} do
+    # Start the server while the auction is still open; a server that starts
+    # after the end time closes the auction on its own during startup.
+    assert {:view, %View{status: :open}} = Local.command(auction_id, :view)
     Clock.Test.set(ends_at + 1_000)
 
     assert {:closed, nil, %View{status: :closed}} = Local.command(auction_id, :close)
