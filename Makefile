@@ -4,7 +4,7 @@ export HOST_UID HOST_GID
 DC  := docker compose
 RUN := $(DC) run --rm dev
 
-.PHONY: image toolchain mix gleam gleam-test db-up db-down db-reset deps test release-image release-smoke
+.PHONY: image toolchain mix gleam gleam-test db-up db-down db-reset deps test fmt check release-image release-smoke
 
 image:
 	$(DC) build dev
@@ -35,6 +35,12 @@ deps:
 
 test: db-up
 	$(RUN) mix test
+
+fmt:
+	$(RUN) sh -c 'mix format && cd rules && gleam format'
+
+check: db-up
+	$(RUN) sh -c 'mix format --check-formatted && (cd rules && gleam format --check && gleam test) && mix compile --warnings-as-errors && mix test'
 
 release-image:
 	docker build -t gavel:local .
