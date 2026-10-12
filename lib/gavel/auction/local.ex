@@ -19,16 +19,24 @@ defmodule Gavel.Auction.Local do
         :exit, {:shutdown, :not_found} ->
           {:error, :not_found}
 
-        :exit, {:noproc, _} ->
-          {:error, :not_found}
+        # The server stopped between lookup and call (for example after losing
+        # the fence); the caller retries and gets a fresh server.
+        :exit, {reason, _} when reason in [:noproc, :normal] ->
+          {:error, :stale}
       end
     end
   end
 
   defp find_or_start_server(auction_id) do
     case Registry.lookup(Gavel.Auction.Registry, auction_id) do
+      # The Registry drops a stopped server's entry asynchronously, so a lookup
+      # right after a stop can still return the dead pid.
       [{pid, _}] ->
-        {:ok, pid}
+        if Process.alive?(pid) do
+          {:ok, pid}
+        else
+          start_server(auction_id)
+        end
 
       [] ->
         start_server(auction_id)
