@@ -9,6 +9,8 @@ defmodule Gavel.Auction.Server do
   alias Gavel.Rules
   alias Gavel.Store
 
+  @pubsub Gavel.PubSub
+
   @doc """
   Starts an auction server registered in the registry under its auction id.
   """
@@ -57,6 +59,7 @@ defmodule Gavel.Auction.Server do
         case Store.append(id, view.seq, events) do
           {:ok, _new_seq} ->
             {new_rules_state, new_view} = apply_events(rules_state, events)
+            broadcast_events(id, events, new_view)
 
             {:reply, {:accepted, new_view.high_bid, new_view},
              %{state | rules_state: new_rules_state, view: new_view}}
@@ -73,5 +76,13 @@ defmodule Gavel.Auction.Server do
   defp apply_events(rules_state, events) do
     new_rules_state = Enum.reduce(events, rules_state, &Rules.evolve(&2, &1))
     {new_rules_state, Rules.view(new_rules_state)}
+  end
+
+  defp broadcast_events(id, events, view) do
+    for event <- events do
+      Phoenix.PubSub.broadcast(@pubsub, "auction:" <> id, {:auction_event, id, event, view})
+    end
+
+    Phoenix.PubSub.broadcast(@pubsub, "auctions", {:auction_updated, id, view})
   end
 end
