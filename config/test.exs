@@ -20,6 +20,8 @@ config :gavel, GavelWeb.Endpoint,
   secret_key_base: "7qQet1kud+7J/ijiVarxAnSPY275KorMblRcVe0Xh0Pb8YX2g9C8KlXN3xEAJfzM",
   server: false
 
+config :gavel, clock: Gavel.Clock.Test
+
 # Print only warnings and errors during test
 config :logger, level: :warning
 
