@@ -1,18 +1,27 @@
-# Gavel
+# gavel
 
-To start your Phoenix server:
+Status: early
 
-* Run `mix setup` to install and setup dependencies
-* Start Phoenix endpoint with `mix phx.server` or inside IEx with `iex -S mix phx.server`
+gavel is a clustered realtime auction service. Each open auction is one Erlang process. Bidders watch a live bid ladder in the browser and bid against each other and against load-generator bots. Any app node can be killed at any moment: its auctions restart on the surviving nodes, rebuilt from the bid log, and no accepted bid is lost, duplicated or reordered.
 
-Now you can visit [`localhost:4000`](http://localhost:4000) from your browser.
+## Guarantees
 
-Ready to run in production? Please [check our deployment guides](https://phoenix.hexdocs.pm/deployment.html).
+1. A bid is acknowledged as accepted only after its event is committed to Postgres.
+2. Per auction, the log is a single totally ordered sequence `seq = 1..n` with no gaps.
+3. Each client request id appears at most once in the log; a retried request returns the original outcome.
+4. Replaying an auction's log through the rules core accepts every event (the log is a valid history under the rules).
+5. Every auction whose end time has passed gets exactly one `Closed` event, it is the last event, and its winner is the highest bid if the reserve is met.
 
-## Learn more
+Durability and ordering come from the Postgres fence. The BEAM side provides availability, low-latency serialized validation, timers, and fan-out.
 
-* Official website: https://www.phoenixframework.org/
-* Guides: https://phoenix.hexdocs.pm/overview.html
-* Docs: https://phoenix.hexdocs.pm
-* Forum: https://elixirforum.com/c/phoenix-forum
-* Source: https://github.com/phoenixframework/phoenix
+## Requirements
+
+- Docker (with Docker Compose)
+- make
+
+## Quickstart
+
+```sh
+make image
+make check
+```
