@@ -133,4 +133,61 @@ defmodule Gavel.RulesTest do
       assert bid |> Bid.to_gleam() |> Bid.from_gleam() == bid
     end
   end
+
+  describe "from_gleam_rejection/1" do
+    test "maps all nine rejections from Gleam to Elixir terms" do
+      assert Rules.from_gleam_rejection({:invalid_config, "title"}) == {:invalid_config, "title"}
+      assert Rules.from_gleam_rejection(:not_open) == :not_open
+      assert Rules.from_gleam_rejection(:already_closed) == :already_closed
+      assert Rules.from_gleam_rejection(:too_late) == :too_late
+      assert Rules.from_gleam_rejection({:below_minimum, 1_000}) == {:below_minimum, 1_000}
+      assert Rules.from_gleam_rejection(:invalid_amount) == :invalid_amount
+      assert Rules.from_gleam_rejection(:seller_cannot_bid) == :seller_cannot_bid
+      assert Rules.from_gleam_rejection(:already_high_bidder) == :already_high_bidder
+      assert Rules.from_gleam_rejection(:not_yet_ended) == :not_yet_ended
+    end
+  end
+
+  describe "open/1 invalid config rejections" do
+    test "invalid title gives {:error, {:invalid_config, \"title\"}}" do
+      assert Rules.open(valid_config(title: "")) == {:error, {:invalid_config, "title"}}
+    end
+
+    test "invalid seller gives {:error, {:invalid_config, \"seller\"}}" do
+      assert Rules.open(valid_config(seller: "")) == {:error, {:invalid_config, "seller"}}
+    end
+
+    test "invalid starting_price gives {:error, {:invalid_config, \"starting_price\"}}" do
+      assert Rules.open(valid_config(starting_price: 0)) ==
+               {:error, {:invalid_config, "starting_price"}}
+
+      assert Rules.open(valid_config(starting_price: -100)) ==
+               {:error, {:invalid_config, "starting_price"}}
+    end
+
+    test "invalid reserve gives {:error, {:invalid_config, \"reserve\"}}" do
+      assert Rules.open(valid_config(reserve: 0)) == {:error, {:invalid_config, "reserve"}}
+      assert Rules.open(valid_config(reserve: -500)) == {:error, {:invalid_config, "reserve"}}
+    end
+
+    test "invalid ends_at gives {:error, {:invalid_config, \"ends_at\"}}" do
+      assert Rules.open(valid_config(ends_at: 0)) == {:error, {:invalid_config, "ends_at"}}
+      assert Rules.open(valid_config(ends_at: -1)) == {:error, {:invalid_config, "ends_at"}}
+    end
+
+    test "invalid snipe_window_ms gives {:error, {:invalid_config, \"snipe_window_ms\"}}" do
+      assert Rules.open(valid_config(snipe_window_ms: -1)) ==
+               {:error, {:invalid_config, "snipe_window_ms"}}
+    end
+
+    test "invalid extension_ms gives {:error, {:invalid_config, \"extension_ms\"}}" do
+      assert Rules.open(valid_config(extension_ms: -1)) ==
+               {:error, {:invalid_config, "extension_ms"}}
+    end
+
+    test "invalid max_extensions gives {:error, {:invalid_config, \"max_extensions\"}}" do
+      assert Rules.open(valid_config(max_extensions: -1)) ==
+               {:error, {:invalid_config, "max_extensions"}}
+    end
+  end
 end
