@@ -4,7 +4,7 @@ export HOST_UID HOST_GID
 DC  := docker compose
 RUN := $(DC) run --rm dev
 
-.PHONY: image toolchain mix gleam db-up db-down db-reset deps test
+.PHONY: image toolchain mix gleam gleam-test db-up db-down db-reset deps test
 
 image:
 	$(DC) build dev
@@ -17,6 +17,9 @@ mix:
 
 gleam:
 	$(RUN) sh -c 'cd rules && gleam $(ARGS)'
+
+gleam-test:
+	$(RUN) sh -c 'cd rules && gleam test'
 
 db-up:
 	$(DC) up -d --wait db
