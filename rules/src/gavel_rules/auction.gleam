@@ -1,9 +1,10 @@
 import gavel_rules/increment
 import gavel_rules/types.{
   type Command, type Config, type Decision, type Event, type Rejection,
-  type State, AlreadyHighBidder, BelowMinimum, Bid, BidAccepted, Close,
-  Duplicate, Emit, Extended, InvalidAmount, InvalidConfig, NotOpen, NotYetEnded,
-  Open, Opened, Pending, PlaceBid, SellerCannotBid, State, TooLate,
+  type State, AlreadyHighBidder, AuctionClosed, BelowMinimum, Bid, BidAccepted,
+  Close, Closed, Duplicate, Emit, Extended, InvalidAmount, InvalidConfig,
+  NotOpen, NotYetEnded, Open, Opened, Pending, PlaceBid, SellerCannotBid, State,
+  TooLate,
 }
 import gleam/bool
 import gleam/dict
@@ -47,7 +48,7 @@ pub fn evolve(state: State, event: Event) -> State {
         extensions_used: state.extensions_used + 1,
         seq: state.seq + 1,
       )
-    _ -> State(..state, seq: state.seq + 1)
+    AuctionClosed(_) -> State(..state, status: Closed, seq: state.seq + 1)
   }
 }
 
@@ -58,13 +59,18 @@ pub fn decide(
 ) -> Result(Decision, Rejection) {
   use <- bool.guard(state.status == Pending, Error(NotOpen))
   case command {
-    Close -> Error(NotYetEnded)
+    Close -> decide_close(state, now)
     PlaceBid(request_id, bidder, amount) ->
       case dict.get(state.accepted, request_id) {
         Ok(existing) -> Ok(Duplicate(existing))
         Error(_) -> decide_place_bid(state, request_id, bidder, amount, now)
       }
   }
+}
+
+fn decide_close(state: State, now: Int) -> Result(Decision, Rejection) {
+  use <- bool.guard(now < state.ends_at, Error(NotYetEnded))
+  Ok(Emit([AuctionClosed(state.high_bid)]))
 }
 
 fn decide_place_bid(

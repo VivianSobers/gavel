@@ -1,11 +1,11 @@
 import gavel_rules/auction
 import gavel_rules/types.{
-  type Config, AlreadyHighBidder, BelowMinimum, Bid, BidAccepted, Close, Config,
-  Duplicate, Emit, Extended, InvalidAmount, NotOpen, NotYetEnded, Opened,
-  PlaceBid, SellerCannotBid, TooLate,
+  type Config, AlreadyHighBidder, AuctionClosed, BelowMinimum, Bid, BidAccepted,
+  Close, Config, Duplicate, Emit, Extended, InvalidAmount, NotOpen, NotYetEnded,
+  Opened, PlaceBid, SellerCannotBid, TooLate,
 }
 import gleam/dict
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 
 fn sample_config(starting_price: Int) -> Config {
   Config(
@@ -323,4 +323,48 @@ pub fn late_bid_with_max_extensions_zero_accepted_without_extension_test() {
 
   assert auction.decide(state, cmd, now)
     == Ok(Emit([BidAccepted(Bid("req-1", "bob", 1000, now))]))
+}
+
+pub fn close_before_end_time_returns_not_yet_ended_test() {
+  let config = sample_config(1000)
+  let state = auction.fold([Opened(config)])
+
+  assert auction.decide(state, Close, state.ends_at - 1) == Error(NotYetEnded)
+}
+
+pub fn close_at_end_time_emits_auction_closed_test() {
+  let config = sample_config(1000)
+  let bid = Bid("req-1", "bob", 1000, 10_000)
+  let state = auction.fold([Opened(config), BidAccepted(bid)])
+
+  assert auction.decide(state, Close, state.ends_at)
+    == Ok(Emit([AuctionClosed(Some(bid))]))
+}
+
+pub fn close_after_end_time_emits_auction_closed_test() {
+  let config = sample_config(1000)
+  let bid = Bid("req-1", "bob", 1000, 10_000)
+  let state = auction.fold([Opened(config), BidAccepted(bid)])
+
+  assert auction.decide(state, Close, state.ends_at + 1000)
+    == Ok(Emit([AuctionClosed(Some(bid))]))
+}
+
+pub fn close_with_high_bid_sets_winner_test() {
+  let config = sample_config(1000)
+  let bid1 = Bid("req-1", "bob", 1000, 10_000)
+  let bid2 = Bid("req-2", "charlie", 1100, 20_000)
+  let state =
+    auction.fold([Opened(config), BidAccepted(bid1), BidAccepted(bid2)])
+
+  assert auction.decide(state, Close, state.ends_at)
+    == Ok(Emit([AuctionClosed(Some(bid2))]))
+}
+
+pub fn close_with_no_bids_has_none_winner_test() {
+  let config = sample_config(1000)
+  let state = auction.fold([Opened(config)])
+
+  assert auction.decide(state, Close, state.ends_at)
+    == Ok(Emit([AuctionClosed(None)]))
 }

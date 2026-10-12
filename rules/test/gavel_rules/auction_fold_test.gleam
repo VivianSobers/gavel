@@ -1,7 +1,7 @@
 import gavel_rules/auction
 import gavel_rules/types.{
-  type Config, AuctionClosed, Bid, BidAccepted, Config, Extended, Open, Opened,
-  State,
+  type Config, AuctionClosed, Bid, BidAccepted, Closed, Config, Extended, Open,
+  Opened, State,
 }
 import gleam/dict
 import gleam/option.{None, Some}
@@ -65,6 +65,15 @@ pub fn evolve_extended_event_test() {
   assert state.seq == 2
 }
 
+pub fn evolve_auction_closed_event_test() {
+  let config = sample_config()
+  let open_state = auction.evolve(auction.new(), Opened(config))
+  let state = auction.evolve(open_state, AuctionClosed(None))
+
+  assert state.status == Closed
+  assert state.seq == 2
+}
+
 pub fn evolve_other_events_increment_seq_only_test() {
   let config = sample_config()
   let open_state = auction.evolve(auction.new(), Opened(config))
@@ -85,7 +94,7 @@ pub fn evolve_other_events_increment_seq_only_test() {
 
   let after_closed = auction.evolve(after_extended, AuctionClosed(Some(bid)))
   assert after_closed.seq == 4
-  assert after_closed.status == Open
+  assert after_closed.status == Closed
 }
 
 pub fn fold_multiple_events_test() {
@@ -100,7 +109,7 @@ pub fn fold_multiple_events_test() {
       AuctionClosed(Some(bid)),
     ])
 
-  assert state.status == Open
+  assert state.status == Closed
   assert state.seq == 4
   assert state.ends_at == 1_700_000_120_000
   assert state.extensions_used == 1
