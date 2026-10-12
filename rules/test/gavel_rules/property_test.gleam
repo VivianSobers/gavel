@@ -1,6 +1,8 @@
 import gavel_rules/auction
 import gavel_rules/support/gen
-import gavel_rules/types.{AlreadyClosed, BidAccepted, Closed, Duplicate, Emit}
+import gavel_rules/types.{
+  AlreadyClosed, BidAccepted, Closed, Duplicate, Emit, Opened,
+}
 import gleam/list
 import gleam/option.{None, Some}
 import qcheck
@@ -75,4 +77,23 @@ pub fn closed_auctions_reject_commands_property_test() {
       }
     _ -> Nil
   }
+}
+
+pub fn fold_matches_stepwise_evolve_property_test() {
+  use #(config, steps) <- qcheck.given(gen.scenario())
+  let history = gen.run(config, steps)
+  let emitted_events =
+    list.flat_map(history, fn(step) {
+      let #(_before, _command, _now, outcome, _after) = step
+      case outcome {
+        Ok(Emit(events)) -> events
+        _ -> []
+      }
+    })
+  let all_events = [Opened(config), ..emitted_events]
+  let final_state = case list.last(history) {
+    Ok(#(_before, _command, _now, _outcome, after)) -> after
+    Error(_) -> auction.evolve(auction.new(), Opened(config))
+  }
+  assert auction.fold(all_events) == final_state
 }
