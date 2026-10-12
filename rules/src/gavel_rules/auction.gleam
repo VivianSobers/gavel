@@ -1,9 +1,9 @@
 import gavel_rules/increment
 import gavel_rules/types.{
   type Command, type Config, type Decision, type Event, type Rejection,
-  type State, AlreadyHighBidder, BelowMinimum, Bid, BidAccepted, Close, Emit,
-  InvalidAmount, InvalidConfig, NotOpen, NotYetEnded, Open, Opened, Pending,
-  PlaceBid, SellerCannotBid, State, TooLate,
+  type State, AlreadyHighBidder, BelowMinimum, Bid, BidAccepted, Close,
+  Duplicate, Emit, InvalidAmount, InvalidConfig, NotOpen, NotYetEnded, Open,
+  Opened, Pending, PlaceBid, SellerCannotBid, State, TooLate,
 }
 import gleam/bool
 import gleam/dict
@@ -52,16 +52,28 @@ pub fn decide(
   use <- bool.guard(state.status == Pending, Error(NotOpen))
   case command {
     Close -> Error(NotYetEnded)
-    PlaceBid(request_id, bidder, amount) -> {
-      use <- bool.guard(now >= state.ends_at, Error(TooLate))
-      use <- bool.guard(is_seller(state, bidder), Error(SellerCannotBid))
-      use <- bool.guard(is_high_bidder(state, bidder), Error(AlreadyHighBidder))
-      use <- bool.guard(amount <= 0, Error(InvalidAmount))
-      let minimum = minimum_next_bid(state)
-      use <- bool.guard(amount < minimum, Error(BelowMinimum(minimum)))
-      Ok(Emit([BidAccepted(Bid(request_id, bidder, amount, now))]))
-    }
+    PlaceBid(request_id, bidder, amount) ->
+      case dict.get(state.accepted, request_id) {
+        Ok(existing) -> Ok(Duplicate(existing))
+        Error(_) -> decide_place_bid(state, request_id, bidder, amount, now)
+      }
   }
+}
+
+fn decide_place_bid(
+  state: State,
+  request_id: String,
+  bidder: String,
+  amount: Int,
+  now: Int,
+) -> Result(Decision, Rejection) {
+  use <- bool.guard(now >= state.ends_at, Error(TooLate))
+  use <- bool.guard(is_seller(state, bidder), Error(SellerCannotBid))
+  use <- bool.guard(is_high_bidder(state, bidder), Error(AlreadyHighBidder))
+  use <- bool.guard(amount <= 0, Error(InvalidAmount))
+  let minimum = minimum_next_bid(state)
+  use <- bool.guard(amount < minimum, Error(BelowMinimum(minimum)))
+  Ok(Emit([BidAccepted(Bid(request_id, bidder, amount, now))]))
 }
 
 pub fn fold(events: List(Event)) -> State {

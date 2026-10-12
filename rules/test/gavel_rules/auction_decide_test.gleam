@@ -1,8 +1,8 @@
 import gavel_rules/auction
 import gavel_rules/types.{
   type Config, AlreadyHighBidder, BelowMinimum, Bid, BidAccepted, Close, Config,
-  Emit, InvalidAmount, NotOpen, NotYetEnded, Opened, PlaceBid, SellerCannotBid,
-  TooLate,
+  Duplicate, Emit, InvalidAmount, NotOpen, NotYetEnded, Opened, PlaceBid,
+  SellerCannotBid, TooLate,
 }
 import gleam/dict
 import gleam/option.{Some}
@@ -174,4 +174,33 @@ pub fn bid_after_end_time_rejected_test() {
   let command = PlaceBid(request_id: "req-1", bidder: "bob", amount: 1000)
 
   assert auction.decide(state, command, state.ends_at + 1000) == Error(TooLate)
+}
+
+pub fn same_request_twice_returns_duplicate_test() {
+  let config = sample_config(1000)
+  let bid = Bid("req-1", "bob", 1000, 10_000)
+  let state = auction.fold([Opened(config), BidAccepted(bid)])
+  let command = PlaceBid(request_id: "req-1", bidder: "bob", amount: 1000)
+
+  assert auction.decide(state, command, 15_000) == Ok(Duplicate(bid))
+}
+
+pub fn same_request_with_different_amount_returns_duplicate_test() {
+  let config = sample_config(1000)
+  let bid = Bid("req-1", "bob", 1000, 10_000)
+  let state = auction.fold([Opened(config), BidAccepted(bid)])
+  let command = PlaceBid(request_id: "req-1", bidder: "bob", amount: 2000)
+
+  assert auction.decide(state, command, 15_000) == Ok(Duplicate(bid))
+}
+
+pub fn same_request_after_later_bid_returns_duplicate_test() {
+  let config = sample_config(1000)
+  let bid1 = Bid("req-1", "bob", 1000, 10_000)
+  let bid2 = Bid("req-2", "charlie", 1100, 20_000)
+  let state =
+    auction.fold([Opened(config), BidAccepted(bid1), BidAccepted(bid2)])
+  let command = PlaceBid(request_id: "req-1", bidder: "bob", amount: 1000)
+
+  assert auction.decide(state, command, 30_000) == Ok(Duplicate(bid1))
 }
