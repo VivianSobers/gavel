@@ -30,7 +30,7 @@ defmodule Gavel.Auction.LocalTest do
   test "first command starts one server", %{auction_id: auction_id} do
     assert Registry.lookup(Gavel.Auction.Registry, auction_id) == []
 
-    assert :ok = Local.command(auction_id, :ping)
+    assert {:view, %Gavel.Rules.View{}} = Local.command(auction_id, :view)
 
     assert [{pid, nil}] = Registry.lookup(Gavel.Auction.Registry, auction_id)
     assert Process.alive?(pid)
@@ -38,10 +38,10 @@ defmodule Gavel.Auction.LocalTest do
   end
 
   test "second command reuses the existing server", %{auction_id: auction_id} do
-    assert :ok = Local.command(auction_id, :ping)
+    assert {:view, %Gavel.Rules.View{}} = Local.command(auction_id, :view)
     assert [{first_pid, _}] = Registry.lookup(Gavel.Auction.Registry, auction_id)
 
-    assert :ok = Local.command(auction_id, :ping)
+    assert {:view, %Gavel.Rules.View{}} = Local.command(auction_id, :view)
     assert [{second_pid, _}] = Registry.lookup(Gavel.Auction.Registry, auction_id)
 
     assert first_pid == second_pid
@@ -51,20 +51,34 @@ defmodule Gavel.Auction.LocalTest do
   test "unknown id returns {:error, :not_found}" do
     unknown_id = Ecto.UUID.generate()
 
-    assert Local.command(unknown_id, :ping) == {:error, :not_found}
-    _ = :sys.get_state(Gavel.Auction.Registry)
-    assert Registry.lookup(Gavel.Auction.Registry, unknown_id) == []
+    assert Local.command(unknown_id, :view) == {:error, :not_found}
+    # The Registry removes the stopped server's entry asynchronously.
+    assert eventually(fn -> Registry.lookup(Gavel.Auction.Registry, unknown_id) == [] end)
   end
 
   test "handles race when starting server concurrently", %{auction_id: auction_id} do
-    task1 = Task.async(fn -> Local.command(auction_id, :ping) end)
-    task2 = Task.async(fn -> Local.command(auction_id, :ping) end)
+    task1 = Task.async(fn -> Local.command(auction_id, :view) end)
+    task2 = Task.async(fn -> Local.command(auction_id, :view) end)
 
-    assert :ok = Task.await(task1)
-    assert :ok = Task.await(task2)
+    assert {:view, %Gavel.Rules.View{}} = Task.await(task1)
+    assert {:view, %Gavel.Rules.View{}} = Task.await(task2)
 
     assert [{pid, _}] = Registry.lookup(Gavel.Auction.Registry, auction_id)
     assert Process.alive?(pid)
     assert length(DynamicSupervisor.which_children(Gavel.Auction.Supervisor)) == 1
+  end
+
+  defp eventually(check, attempts \\ 50) do
+    cond do
+      check.() ->
+        true
+
+      attempts == 0 ->
+        false
+
+      true ->
+        Process.sleep(10)
+        eventually(check, attempts - 1)
+    end
   end
 end
