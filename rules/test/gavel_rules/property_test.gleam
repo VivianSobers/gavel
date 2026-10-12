@@ -97,3 +97,12 @@ pub fn fold_matches_stepwise_evolve_property_test() {
   }
   assert auction.fold(all_events) == final_state
 }
+
+pub fn end_time_never_decreases_property_test() {
+  use #(config, steps) <- qcheck.given(gen.scenario())
+  let history = gen.run(config, steps)
+  use #(before, _command, _now, _outcome, after) <- list.each(history)
+  assert after.ends_at >= before.ends_at
+  assert after.ends_at >= config.ends_at
+  Nil
+}
