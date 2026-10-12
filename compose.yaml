@@ -13,3 +13,23 @@ services:
       HEX_HOME: /app/.cache/hex
       XDG_CACHE_HOME: /app/.cache
       DB_HOST: db
+    depends_on:
+      db:
+        condition: service_healthy
+        required: false
+
+  db:
+    image: postgres:17.11-bookworm
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
