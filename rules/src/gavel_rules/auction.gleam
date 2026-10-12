@@ -1,7 +1,8 @@
 import gavel_rules/increment
 import gavel_rules/types.{
-  type Config, type Event, type Rejection, type State, InvalidConfig, Open,
-  Opened, Pending, State,
+  type Command, type Config, type Decision, type Event, type Rejection,
+  type State, Bid, BidAccepted, Close, Emit, InvalidConfig, NotOpen, NotYetEnded,
+  Open, Opened, Pending, PlaceBid, State,
 }
 import gleam/bool
 import gleam/dict
@@ -30,7 +31,28 @@ pub fn evolve(state: State, event: Event) -> State {
         ends_at: c.ends_at,
         seq: state.seq + 1,
       )
+    BidAccepted(b) ->
+      State(
+        ..state,
+        high_bid: Some(b),
+        bids: [b, ..state.bids],
+        accepted: dict.insert(state.accepted, b.request_id, b),
+        seq: state.seq + 1,
+      )
     _ -> State(..state, seq: state.seq + 1)
+  }
+}
+
+pub fn decide(
+  state: State,
+  command: Command,
+  now: Int,
+) -> Result(Decision, Rejection) {
+  use <- bool.guard(state.status == Pending, Error(NotOpen))
+  case command {
+    Close -> Error(NotYetEnded)
+    PlaceBid(request_id, bidder, amount) ->
+      Ok(Emit([BidAccepted(Bid(request_id, bidder, amount, now))]))
   }
 }
 
