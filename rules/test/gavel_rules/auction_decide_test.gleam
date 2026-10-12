@@ -1,7 +1,7 @@
 import gavel_rules/auction
 import gavel_rules/types.{
-  type Config, Bid, BidAccepted, Close, Config, Emit, NotOpen, NotYetEnded,
-  Opened, PlaceBid,
+  type Config, BelowMinimum, Bid, BidAccepted, Close, Config, Emit, NotOpen,
+  NotYetEnded, Opened, PlaceBid,
 }
 import gleam/dict
 import gleam/option.{Some}
@@ -75,4 +75,23 @@ pub fn close_returns_not_yet_ended_placeholder_test() {
   let state = auction.fold([Opened(config)])
 
   assert auction.decide(state, Close, 10_000) == Error(NotYetEnded)
+}
+
+pub fn bid_one_cent_below_starting_price_rejected_test() {
+  let config = sample_config(1000)
+  let state = auction.fold([Opened(config)])
+  let command = PlaceBid(request_id: "req-1", bidder: "bob", amount: 999)
+
+  assert auction.decide(state, command, 10_000) == Error(BelowMinimum(1000))
+}
+
+pub fn bid_one_cent_below_minimum_with_high_bid_rejected_test() {
+  let config = sample_config(1000)
+  let bid1 = Bid("req-1", "bob", 1000, 10_000)
+  let state = auction.fold([Opened(config), BidAccepted(bid1)])
+
+  assert auction.minimum_next_bid(state) == 1100
+
+  let command = PlaceBid(request_id: "req-2", bidder: "charlie", amount: 1099)
+  assert auction.decide(state, command, 20_000) == Error(BelowMinimum(1100))
 }
