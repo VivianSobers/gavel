@@ -24,19 +24,25 @@ defmodule Gavel.Store do
   end
 
   @doc """
-  Loads events for an auction.
+  Loads events for an auction ordered by sequence number.
   """
-  @spec load(binary()) :: {:ok, [Event.t()]}
+  @spec load(binary()) :: {:ok, [Event.t()]} | {:error, :not_found}
   def load(auction_id) do
-    records =
-      Repo.all(
-        from(e in EventRecord,
-          where: e.auction_id == ^auction_id
+    with {:ok, valid_id} <- Ecto.UUID.cast(auction_id),
+         true <- Repo.exists?(from(a in AuctionRecord, where: a.id == ^valid_id)) do
+      records =
+        Repo.all(
+          from(e in EventRecord,
+            where: e.auction_id == ^valid_id,
+            order_by: [asc: e.seq]
+          )
         )
-      )
 
-    events = Enum.map(records, &Codec.decode(&1.type, &1.payload))
-    {:ok, events}
+      events = Enum.map(records, &Codec.decode(&1.type, &1.payload))
+      {:ok, events}
+    else
+      _ -> {:error, :not_found}
+    end
   end
 
   defp insert_auction_and_opened(%Config{} = config, %Event{} = opened_event) do
