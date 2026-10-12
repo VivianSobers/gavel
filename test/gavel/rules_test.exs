@@ -190,4 +190,115 @@ defmodule Gavel.RulesTest do
                {:error, {:invalid_config, "max_extensions"}}
     end
   end
+
+  describe "fold/1 and evolve/2" do
+    test "fold/1 produces state from events" do
+      config = valid_config()
+      {:ok, [opened_event]} = Rules.open(config)
+
+      state = Rules.fold([opened_event])
+      assert state != nil
+    end
+
+    test "evolve/2 advances state stepwise matching fold/1" do
+      config = valid_config()
+      {:ok, [opened_event]} = Rules.open(config)
+      state = Rules.fold([opened_event])
+
+      bid_event = %Event{
+        type: :bid_accepted,
+        bid: %Bid{
+          request_id: "req-1",
+          bidder: "bob",
+          amount: 1_500,
+          at: 1_700_000_001_000
+        }
+      }
+
+      evolved_state = Rules.evolve(state, bid_event)
+      folded_state = Rules.fold([opened_event, bid_event])
+      assert evolved_state == folded_state
+    end
+  end
+
+  describe "decide/3" do
+    test "open, fold, decide a bid -> {:emit, [%Event{type: :bid_accepted}]}" do
+      config = valid_config()
+      {:ok, [opened_event]} = Rules.open(config)
+      state = Rules.fold([opened_event])
+      now = 1_699_999_000_000
+
+      assert {:emit, [%Event{type: :bid_accepted} = bid_event]} =
+               Rules.decide(state, {:place_bid, "req-1", "bob", 1_500}, now)
+
+      assert bid_event.bid == %Bid{
+               request_id: "req-1",
+               bidder: "bob",
+               amount: 1_500,
+               at: now
+             }
+    end
+
+    test "below minimum -> {:error, {:below_minimum, n}}" do
+      config = valid_config(starting_price: 1_000)
+      {:ok, [opened_event]} = Rules.open(config)
+      state = Rules.fold([opened_event])
+      now = 1_699_999_000_000
+
+      assert Rules.decide(state, {:place_bid, "req-1", "bob", 500}, now) ==
+               {:error, {:below_minimum, 1_000}}
+    end
+
+    test "repeat request -> {:duplicate, %Bid{}}" do
+      config = valid_config()
+      {:ok, [opened_event]} = Rules.open(config)
+      state = Rules.fold([opened_event])
+      now = 1_699_999_000_000
+
+      assert {:emit, [bid_event]} =
+               Rules.decide(state, {:place_bid, "req-1", "bob", 1_500}, now)
+
+      state = Rules.evolve(state, bid_event)
+
+      assert {:duplicate, %Bid{} = duplicate_bid} =
+               Rules.decide(state, {:place_bid, "req-1", "bob", 2_000}, now + 1_000)
+
+      assert duplicate_bid == %Bid{
+               request_id: "req-1",
+               bidder: "bob",
+               amount: 1_500,
+               at: now
+             }
+    end
+
+    test "close before end -> {:error, :not_yet_ended}" do
+      config = valid_config(ends_at: 1_700_000_000_000)
+      {:ok, [opened_event]} = Rules.open(config)
+      state = Rules.fold([opened_event])
+
+      assert Rules.decide(state, :close, 1_699_999_000_000) == {:error, :not_yet_ended}
+    end
+
+    test "close after end -> {:emit, [%Event{type: :closed}]}" do
+      config = valid_config(ends_at: 1_700_000_000_000, reserve: 1_000)
+      {:ok, [opened_event]} = Rules.open(config)
+      state = Rules.fold([opened_event])
+      now = 1_699_999_000_000
+
+      {:emit, [bid_event]} =
+        Rules.decide(state, {:place_bid, "req-1", "bob", 1_500}, now)
+
+      state = Rules.evolve(state, bid_event)
+
+      assert {:emit, [%Event{type: :closed} = close_event]} =
+               Rules.decide(state, :close, 1_700_000_000_001)
+
+      assert close_event.winner == %Bid{
+               request_id: "req-1",
+               bidder: "bob",
+               amount: 1_500,
+               at: now
+             }
+    end
+  end
 end

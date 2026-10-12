@@ -3,8 +3,11 @@ defmodule Gavel.Rules do
   Elixir boundary wrapper for the Gleam rules core.
   """
 
+  alias Gavel.Rules.Bid
   alias Gavel.Rules.Config
   alias Gavel.Rules.Event
+
+  @type command :: {:place_bid, String.t(), String.t(), integer()} | :close
 
   @type rejection ::
           {:invalid_config, String.t()}
@@ -32,6 +35,51 @@ defmodule Gavel.Rules do
         {:error, from_gleam_rejection(rejection)}
     end
   end
+
+  @doc """
+  Folds a list of events into an opaque auction state.
+  """
+  @spec fold([Event.t()]) :: any()
+  def fold(events) when is_list(events) do
+    gleam_events = Enum.map(events, &Event.to_gleam/1)
+    :gavel_rules@auction.fold(gleam_events)
+  end
+
+  @doc """
+  Evolves an opaque auction state by applying a single event.
+  """
+  @spec evolve(any(), Event.t()) :: any()
+  def evolve(state, %Event{} = event) do
+    gleam_event = Event.to_gleam(event)
+    :gavel_rules@auction.evolve(state, gleam_event)
+  end
+
+  @doc """
+  Decides a command against an opaque auction state at the given unix timestamp in ms.
+  """
+  @spec decide(any(), command(), integer()) ::
+          {:emit, [Event.t()]} | {:duplicate, Bid.t()} | {:error, rejection()}
+  def decide(state, command, now_ms) when is_integer(now_ms) do
+    gleam_command = to_gleam_command(command)
+
+    case :gavel_rules@auction.decide(state, gleam_command, now_ms) do
+      {:ok, {:emit, gleam_events}} ->
+        {:emit, Enum.map(gleam_events, &Event.from_gleam/1)}
+
+      {:ok, {:duplicate, gleam_bid}} ->
+        {:duplicate, Bid.from_gleam(gleam_bid)}
+
+      {:error, rejection} ->
+        {:error, from_gleam_rejection(rejection)}
+    end
+  end
+
+  defp to_gleam_command({:place_bid, request_id, bidder, amount})
+       when is_binary(request_id) and is_binary(bidder) and is_integer(amount) do
+    {:place_bid, request_id, bidder, amount}
+  end
+
+  defp to_gleam_command(:close), do: :close
 
   @doc false
   @spec from_gleam_rejection(any()) :: rejection()
