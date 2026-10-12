@@ -1,6 +1,6 @@
 import gavel_rules/auction
 import gavel_rules/support/gen
-import gavel_rules/types.{BidAccepted, Emit}
+import gavel_rules/types.{AlreadyClosed, BidAccepted, Closed, Duplicate, Emit}
 import gleam/list
 import gleam/option.{None, Some}
 import qcheck
@@ -56,6 +56,23 @@ pub fn accepted_bids_meet_minimum_property_test() {
         _ -> Nil
       }
     }
+    _ -> Nil
+  }
+}
+
+pub fn closed_auctions_reject_commands_property_test() {
+  use #(config, steps) <- qcheck.given(gen.scenario())
+  let history = gen.run(config, steps)
+  use #(before, _command, _now, outcome, _after) <- list.each(history)
+  case before.status {
+    Closed ->
+      case outcome {
+        Ok(Duplicate(_)) -> Nil
+        other -> {
+          assert other == Error(AlreadyClosed)
+          Nil
+        }
+      }
     _ -> Nil
   }
 }
