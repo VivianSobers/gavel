@@ -5,6 +5,7 @@ defmodule Gavel.RulesTest do
   alias Gavel.Rules.Bid
   alias Gavel.Rules.Config
   alias Gavel.Rules.Event
+  alias Gavel.Rules.View
 
   defp valid_config(attrs \\ %{}) do
     Map.merge(
@@ -299,6 +300,119 @@ defmodule Gavel.RulesTest do
                amount: 1_500,
                at: now
              }
+    end
+  end
+
+  describe "view/1" do
+    test "projects view from an opened auction state with no bids" do
+      config = valid_config(starting_price: 1_000, reserve: 5_000)
+      {:ok, [opened_event]} = Rules.open(config)
+      state = Rules.fold([opened_event])
+
+      assert %View{} = view = Rules.view(state)
+      assert view.title == "Vintage Watch"
+      assert view.seller == "alice"
+      assert view.status == :open
+      assert view.high_bid == nil
+      assert view.recent_bids == []
+      assert view.minimum_next_bid == 1_000
+      assert view.ends_at == 1_700_000_000_000
+      assert view.seq == 1
+      assert view.reserve_met == false
+    end
+
+    test "reserve_met is true when there is no reserve" do
+      config = valid_config(reserve: nil)
+      {:ok, [opened_event]} = Rules.open(config)
+      state = Rules.fold([opened_event])
+
+      view = Rules.view(state)
+      assert view.reserve_met == true
+
+      now = 1_699_000_000_000
+      {:emit, [bid_event]} = Rules.decide(state, {:place_bid, "req-1", "bob", 1_500}, now)
+      state = Rules.evolve(state, bid_event)
+
+      view_after_bid = Rules.view(state)
+      assert view_after_bid.reserve_met == true
+    end
+
+    test "reserve_met evaluates correctly against high bid amount" do
+      config = valid_config(reserve: 5_000, starting_price: 1_000)
+      {:ok, [opened_event]} = Rules.open(config)
+      state = Rules.fold([opened_event])
+
+      now = 1_699_000_000_000
+
+      # Below reserve (3_000 < 5_000)
+      {:emit, [bid_1]} = Rules.decide(state, {:place_bid, "req-1", "bob", 3_000}, now)
+      state = Rules.evolve(state, bid_1)
+      assert Rules.view(state).reserve_met == false
+
+      # Meets reserve exactly (5_000 == 5_000)
+      {:emit, [bid_2]} = Rules.decide(state, {:place_bid, "req-2", "carol", 5_000}, now + 1_000)
+      state = Rules.evolve(state, bid_2)
+      assert Rules.view(state).reserve_met == true
+
+      # Exceeds reserve (6_000 > 5_000)
+      {:emit, [bid_3]} = Rules.decide(state, {:place_bid, "req-3", "bob", 6_000}, now + 2_000)
+      state = Rules.evolve(state, bid_3)
+      assert Rules.view(state).reserve_met == true
+    end
+
+    test "with 25 bids: recent_bids has 20, newest first" do
+      config = valid_config(starting_price: 1_000, reserve: 2_000)
+      {:ok, [opened_event]} = Rules.open(config)
+      initial_state = Rules.fold([opened_event])
+
+      base_time = 1_699_000_000_000
+
+      state =
+        Enum.reduce(1..25, initial_state, fn i, acc_state ->
+          bidder = if rem(i, 2) == 1, do: "bidder_a", else: "bidder_b"
+          amount = 1_000 + i * 100
+          at = base_time + i * 1_000
+
+          {:emit, [bid_event]} =
+            Rules.decide(acc_state, {:place_bid, "req-#{i}", bidder, amount}, at)
+
+          Rules.evolve(acc_state, bid_event)
+        end)
+
+      view = Rules.view(state)
+
+      assert %View{} = view
+      assert length(view.recent_bids) == 20
+      assert Enum.map(view.recent_bids, & &1.request_id) == Enum.map(25..6//-1, &"req-#{&1}")
+      assert hd(view.recent_bids).amount == 3_500
+      assert hd(view.recent_bids).bidder == "bidder_a"
+      assert List.last(view.recent_bids).amount == 1_600
+      assert List.last(view.recent_bids).bidder == "bidder_b"
+
+      assert view.high_bid == %Bid{
+               request_id: "req-25",
+               bidder: "bidder_a",
+               amount: 3_500,
+               at: base_time + 25 * 1_000
+             }
+
+      assert view.minimum_next_bid == 3_600
+      assert view.seq == 26
+      assert view.status == :open
+      assert view.reserve_met == true
+    end
+
+    test "projects status :closed when auction is closed" do
+      config = valid_config(ends_at: 1_700_000_000_000)
+      {:ok, [opened_event]} = Rules.open(config)
+      state = Rules.fold([opened_event])
+
+      {:emit, [close_event]} = Rules.decide(state, :close, 1_700_000_000_001)
+      closed_state = Rules.evolve(state, close_event)
+
+      view = Rules.view(closed_state)
+      assert view.status == :closed
+      assert view.seq == 2
     end
   end
 end

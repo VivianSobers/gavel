@@ -6,6 +6,7 @@ defmodule Gavel.Rules do
   alias Gavel.Rules.Bid
   alias Gavel.Rules.Config
   alias Gavel.Rules.Event
+  alias Gavel.Rules.View
 
   @type command :: {:place_bid, String.t(), String.t(), integer()} | :close
 
@@ -72,6 +73,14 @@ defmodule Gavel.Rules do
       {:error, rejection} ->
         {:error, from_gleam_rejection(rejection)}
     end
+  end
+
+  @doc """
+  Projects an opaque auction state into a View struct.
+  """
+  @spec view(any()) :: View.t()
+  def view(state) do
+    View.from_gleam(state)
   end
 
   defp to_gleam_command({:place_bid, request_id, bidder, amount})
