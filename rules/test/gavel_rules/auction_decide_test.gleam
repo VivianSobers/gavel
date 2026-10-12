@@ -12,7 +12,7 @@ fn sample_config(starting_price: Int) -> Config {
     title: "Vintage Watch",
     seller: "alice",
     starting_price: starting_price,
-    reserve: Some(5000),
+    reserve: None,
     ends_at: 1_700_000_000_000,
     snipe_window_ms: 60_000,
     extension_ms: 120_000,
@@ -367,4 +367,31 @@ pub fn close_with_no_bids_has_none_winner_test() {
 
   assert auction.decide(state, Close, state.ends_at)
     == Ok(Emit([AuctionClosed(None)]))
+}
+
+pub fn close_with_high_bid_below_reserve_withholds_winner_test() {
+  let config = Config(..sample_config(1000), reserve: Some(5000))
+  let bid = Bid("req-1", "bob", 4000, 10_000)
+  let state = auction.fold([Opened(config), BidAccepted(bid)])
+
+  assert auction.decide(state, Close, state.ends_at)
+    == Ok(Emit([AuctionClosed(None)]))
+}
+
+pub fn close_with_high_bid_equal_to_reserve_sets_winner_test() {
+  let config = Config(..sample_config(1000), reserve: Some(5000))
+  let bid = Bid("req-1", "bob", 5000, 10_000)
+  let state = auction.fold([Opened(config), BidAccepted(bid)])
+
+  assert auction.decide(state, Close, state.ends_at)
+    == Ok(Emit([AuctionClosed(Some(bid))]))
+}
+
+pub fn close_with_high_bid_above_reserve_sets_winner_test() {
+  let config = Config(..sample_config(1000), reserve: Some(5000))
+  let bid = Bid("req-1", "bob", 6000, 10_000)
+  let state = auction.fold([Opened(config), BidAccepted(bid)])
+
+  assert auction.decide(state, Close, state.ends_at)
+    == Ok(Emit([AuctionClosed(Some(bid))]))
 }

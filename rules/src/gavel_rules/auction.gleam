@@ -1,6 +1,6 @@
 import gavel_rules/increment
 import gavel_rules/types.{
-  type Command, type Config, type Decision, type Event, type Rejection,
+  type Bid, type Command, type Config, type Decision, type Event, type Rejection,
   type State, AlreadyHighBidder, AuctionClosed, BelowMinimum, Bid, BidAccepted,
   Close, Closed, Duplicate, Emit, Extended, InvalidAmount, InvalidConfig,
   NotOpen, NotYetEnded, Open, Opened, Pending, PlaceBid, SellerCannotBid, State,
@@ -9,7 +9,7 @@ import gavel_rules/types.{
 import gleam/bool
 import gleam/dict
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 
 pub fn minimum_next_bid(state: State) -> Int {
   case state.config, state.high_bid {
@@ -70,7 +70,29 @@ pub fn decide(
 
 fn decide_close(state: State, now: Int) -> Result(Decision, Rejection) {
   use <- bool.guard(now < state.ends_at, Error(NotYetEnded))
-  Ok(Emit([AuctionClosed(state.high_bid)]))
+  let winner = resolve_winner(state)
+  Ok(Emit([AuctionClosed(winner)]))
+}
+
+fn resolve_winner(state: State) -> Option(Bid) {
+  case state.high_bid {
+    Some(high) -> {
+      use <- bool.guard(is_below_reserve(state, high.amount), None)
+      Some(high)
+    }
+    None -> None
+  }
+}
+
+fn is_below_reserve(state: State, amount: Int) -> Bool {
+  case state.config {
+    Some(config) ->
+      case config.reserve {
+        Some(reserve) -> amount < reserve
+        None -> False
+      }
+    None -> False
+  }
 }
 
 fn decide_place_bid(
