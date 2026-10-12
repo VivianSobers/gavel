@@ -21,6 +21,11 @@ defmodule Gavel.Rules do
           | :already_high_bidder
           | :not_yet_ended
 
+  @type history_error ::
+          {:rejected, pos_integer(), rejection()}
+          | {:unexpected, pos_integer()}
+          | :missing_opened
+
   @doc """
   Validates an auction config and returns the initial Opened event.
   """
@@ -81,6 +86,28 @@ defmodule Gavel.Rules do
   @spec view(any()) :: View.t()
   def view(state) do
     View.from_gleam(state)
+  end
+
+  @doc """
+  Validates a stored history of events and returns the final View struct.
+  """
+  @spec validate_history([Event.t()]) :: {:ok, View.t()} | {:error, history_error()}
+  def validate_history(events) when is_list(events) do
+    gleam_events = Enum.map(events, &Event.to_gleam/1)
+
+    case :gavel_rules@history.validate(gleam_events) do
+      {:ok, gleam_state} ->
+        {:ok, View.from_gleam(gleam_state)}
+
+      {:error, {:rejected, seq, gleam_rejection}} ->
+        {:error, {:rejected, seq, from_gleam_rejection(gleam_rejection)}}
+
+      {:error, {:unexpected, seq}} ->
+        {:error, {:unexpected, seq}}
+
+      {:error, :missing_opened} ->
+        {:error, :missing_opened}
+    end
   end
 
   defp to_gleam_command({:place_bid, request_id, bidder, amount})

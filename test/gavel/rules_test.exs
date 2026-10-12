@@ -415,4 +415,117 @@ defmodule Gavel.RulesTest do
       assert view.seq == 2
     end
   end
+
+  describe "validate_history/1" do
+    test "valid list -> {:ok, %View{}}" do
+      config = valid_config(starting_price: 1_000, reserve: 2_000, ends_at: 1_700_000_000_000)
+      {:ok, [opened_event]} = Rules.open(config)
+
+      bid_event = %Event{
+        type: :bid_accepted,
+        bid: %Bid{
+          request_id: "req-1",
+          bidder: "bob",
+          amount: 1_500,
+          at: 1_699_000_000_000
+        }
+      }
+
+      assert {:ok, %View{} = view} = Rules.validate_history([opened_event, bid_event])
+      assert view.title == "Vintage Watch"
+      assert view.status == :open
+      assert view.high_bid == bid_event.bid
+      assert view.seq == 2
+      assert view.minimum_next_bid == 1_600
+      assert view.reserve_met == false
+    end
+
+    test "tampered amount -> {:error, {:rejected, 2, _}}" do
+      config = valid_config(starting_price: 1_000)
+      {:ok, [opened_event]} = Rules.open(config)
+
+      tampered_bid = %Event{
+        type: :bid_accepted,
+        bid: %Bid{
+          request_id: "req-1",
+          bidder: "bob",
+          amount: 500,
+          at: 1_699_000_000_000
+        }
+      }
+
+      assert {:error, {:rejected, 2, rejection}} =
+               Rules.validate_history([opened_event, tampered_bid])
+
+      assert rejection == {:below_minimum, 1_000}
+    end
+
+    test "empty list or non-opened first event -> {:error, :missing_opened}" do
+      assert Rules.validate_history([]) == {:error, :missing_opened}
+
+      bid_event = %Event{
+        type: :bid_accepted,
+        bid: %Bid{
+          request_id: "req-1",
+          bidder: "bob",
+          amount: 1_500,
+          at: 1_699_000_000_000
+        }
+      }
+
+      assert Rules.validate_history([bid_event]) == {:error, :missing_opened}
+    end
+
+    test "unexpected sequence -> {:error, {:unexpected, seq}}" do
+      config =
+        valid_config(
+          ends_at: 1_700_000_000_000,
+          snipe_window_ms: 10_000,
+          extension_ms: 10_000,
+          max_extensions: 1
+        )
+
+      {:ok, [opened_event]} = Rules.open(config)
+
+      bid_event = %Event{
+        type: :bid_accepted,
+        bid: %Bid{
+          request_id: "req-1",
+          bidder: "bob",
+          amount: 1_500,
+          at: 1_699_999_995_000
+        }
+      }
+
+      assert {:error, {:unexpected, 3}} = Rules.validate_history([opened_event, bid_event])
+    end
+
+    test "valid list through close -> {:ok, %View{status: :closed}}" do
+      config = valid_config(starting_price: 1_000, reserve: 1_500, ends_at: 1_700_000_000_000)
+      {:ok, [opened_event]} = Rules.open(config)
+
+      bid_event = %Event{
+        type: :bid_accepted,
+        bid: %Bid{
+          request_id: "req-1",
+          bidder: "bob",
+          amount: 1_500,
+          at: 1_699_000_000_000
+        }
+      }
+
+      close_event = %Event{
+        type: :closed,
+        winner: bid_event.bid
+      }
+
+      assert {:ok, %View{} = view} =
+               Rules.validate_history([opened_event, bid_event, close_event])
+
+      assert view.status == :closed
+      assert view.seq == 3
+      assert view.reserve_met == true
+      assert view.high_bid == bid_event.bid
+    end
+  end
 end
