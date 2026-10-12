@@ -12,6 +12,7 @@ defmodule Gavel.Application do
       Gavel.Repo,
       {DNSCluster, query: Application.get_env(:gavel, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Gavel.PubSub},
+      Gavel.Cluster.Membership,
       {Registry, keys: :unique, name: Gavel.Auction.Registry},
       {DynamicSupervisor, strategy: :one_for_one, name: Gavel.Auction.Supervisor},
       # Start a worker by calling: Gavel.Worker.start_link(arg)
