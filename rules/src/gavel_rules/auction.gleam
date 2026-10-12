@@ -91,6 +91,7 @@ fn maybe_extend(state: State, now: Int) -> List(Event) {
   case state.config {
     None -> []
     Some(config) -> {
+      use <- bool.guard(state.extensions_used >= config.max_extensions, [])
       let in_window = state.ends_at - now <= config.snipe_window_ms
       use <- bool.guard(!in_window, [])
       let new_ends_at = now + config.extension_ms

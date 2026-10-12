@@ -259,3 +259,68 @@ pub fn extension_equal_to_ends_at_does_not_extend_test() {
   assert auction.decide(state, command, now)
     == Ok(Emit([BidAccepted(Bid("req-1", "bob", 1000, now))]))
 }
+
+pub fn third_late_bid_with_max_extensions_two_accepted_without_extension_test() {
+  let config =
+    Config(
+      ..sample_config(1000),
+      ends_at: 1_000_000,
+      snipe_window_ms: 60_000,
+      extension_ms: 120_000,
+      max_extensions: 2,
+    )
+  let state0 = auction.fold([Opened(config)])
+
+  // First late bid at 950_000: extends by 120_000 from now to 1_070_000.
+  let cmd1 = PlaceBid(request_id: "req-1", bidder: "bob", amount: 1000)
+  let bid1 = Bid("req-1", "bob", 1000, 950_000)
+  assert auction.decide(state0, cmd1, 950_000)
+    == Ok(Emit([BidAccepted(bid1), Extended(1_070_000)]))
+
+  let state1 =
+    auction.fold([Opened(config), BidAccepted(bid1), Extended(1_070_000)])
+  assert state1.extensions_used == 1
+  assert state1.ends_at == 1_070_000
+
+  // Second late bid at 1_020_000: inside window (1_070_000 - 1_020_000 = 50_000 <= 60_000).
+  // Extends by 120_000 from now to 1_140_000.
+  let cmd2 = PlaceBid(request_id: "req-2", bidder: "charlie", amount: 1100)
+  let bid2 = Bid("req-2", "charlie", 1100, 1_020_000)
+  assert auction.decide(state1, cmd2, 1_020_000)
+    == Ok(Emit([BidAccepted(bid2), Extended(1_140_000)]))
+
+  let state2 =
+    auction.fold([
+      Opened(config),
+      BidAccepted(bid1),
+      Extended(1_070_000),
+      BidAccepted(bid2),
+      Extended(1_140_000),
+    ])
+  assert state2.extensions_used == 2
+  assert state2.ends_at == 1_140_000
+
+  // Third late bid at 1_100_000: inside window (1_140_000 - 1_100_000 = 40_000 <= 60_000).
+  // extensions_used (2) >= max_extensions (2), so accepted without extension.
+  let cmd3 = PlaceBid(request_id: "req-3", bidder: "bob", amount: 1200)
+  let bid3 = Bid("req-3", "bob", 1200, 1_100_000)
+  assert auction.decide(state2, cmd3, 1_100_000)
+    == Ok(Emit([BidAccepted(bid3)]))
+}
+
+pub fn late_bid_with_max_extensions_zero_accepted_without_extension_test() {
+  let config =
+    Config(
+      ..sample_config(1000),
+      ends_at: 1_000_000,
+      snipe_window_ms: 60_000,
+      extension_ms: 120_000,
+      max_extensions: 0,
+    )
+  let state = auction.fold([Opened(config)])
+  let cmd = PlaceBid(request_id: "req-1", bidder: "bob", amount: 1000)
+  let now = 950_000
+
+  assert auction.decide(state, cmd, now)
+    == Ok(Emit([BidAccepted(Bid("req-1", "bob", 1000, now))]))
+}
