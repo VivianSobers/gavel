@@ -1,7 +1,7 @@
 import gavel_rules/auction
 import gavel_rules/types.{
   type Config, BelowMinimum, Bid, BidAccepted, Close, Config, Emit,
-  InvalidAmount, NotOpen, NotYetEnded, Opened, PlaceBid,
+  InvalidAmount, NotOpen, NotYetEnded, Opened, PlaceBid, SellerCannotBid,
 }
 import gleam/dict
 import gleam/option.{Some}
@@ -110,4 +110,21 @@ pub fn bid_negative_amount_rejected_test() {
   let command = PlaceBid(request_id: "req-1", bidder: "bob", amount: -1)
 
   assert auction.decide(state, command, 10_000) == Error(InvalidAmount)
+}
+
+pub fn seller_cannot_bid_on_own_auction_test() {
+  let config = sample_config(1000)
+  let state = auction.fold([Opened(config)])
+  let command = PlaceBid(request_id: "req-1", bidder: "alice", amount: 1000)
+
+  assert auction.decide(state, command, 10_000) == Error(SellerCannotBid)
+}
+
+pub fn seller_cannot_bid_even_with_existing_high_bid_test() {
+  let config = sample_config(1000)
+  let bid1 = Bid("req-1", "bob", 1000, 10_000)
+  let state = auction.fold([Opened(config), BidAccepted(bid1)])
+  let command = PlaceBid(request_id: "req-2", bidder: "alice", amount: 1100)
+
+  assert auction.decide(state, command, 20_000) == Error(SellerCannotBid)
 }

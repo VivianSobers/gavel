@@ -2,7 +2,8 @@ import gavel_rules/increment
 import gavel_rules/types.{
   type Command, type Config, type Decision, type Event, type Rejection,
   type State, BelowMinimum, Bid, BidAccepted, Close, Emit, InvalidAmount,
-  InvalidConfig, NotOpen, NotYetEnded, Open, Opened, Pending, PlaceBid, State,
+  InvalidConfig, NotOpen, NotYetEnded, Open, Opened, Pending, PlaceBid,
+  SellerCannotBid, State,
 }
 import gleam/bool
 import gleam/dict
@@ -52,6 +53,7 @@ pub fn decide(
   case command {
     Close -> Error(NotYetEnded)
     PlaceBid(request_id, bidder, amount) -> {
+      use <- bool.guard(is_seller(state, bidder), Error(SellerCannotBid))
       use <- bool.guard(amount <= 0, Error(InvalidAmount))
       let minimum = minimum_next_bid(state)
       use <- bool.guard(amount < minimum, Error(BelowMinimum(minimum)))
@@ -85,4 +87,11 @@ fn invalid_when(
   next: fn() -> Result(List(Event), Rejection),
 ) -> Result(List(Event), Rejection) {
   bool.guard(condition, Error(InvalidConfig(field)), next)
+}
+
+fn is_seller(state: State, bidder: String) -> Bool {
+  case state.config {
+    Some(config) -> config.seller == bidder
+    None -> False
+  }
 }
