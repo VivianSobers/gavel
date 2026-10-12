@@ -5,6 +5,7 @@ defmodule Gavel.Auction.Server do
 
   use GenServer, restart: :transient
 
+  alias Gavel.Clock
   alias Gavel.Rules
   alias Gavel.Store
 
@@ -41,7 +42,36 @@ defmodule Gavel.Auction.Server do
   end
 
   @impl true
+  def handle_call({:command, {:place_bid, _, _, _} = cmd}, _from, state) do
+    now = Clock.now_ms()
+    place_bid(cmd, now, state)
+  end
+
   def handle_call({:command, _command}, _from, state) do
     {:reply, :ok, state}
+  end
+
+  defp place_bid(cmd, now, %{auction_id: id, rules_state: rules_state, view: view} = state) do
+    case Rules.decide(rules_state, cmd, now) do
+      {:emit, events} ->
+        case Store.append(id, view.seq, events) do
+          {:ok, _new_seq} ->
+            {new_rules_state, new_view} = apply_events(rules_state, events)
+
+            {:reply, {:accepted, new_view.high_bid, new_view},
+             %{state | rules_state: new_rules_state, view: new_view}}
+
+          {:error, :conflict} ->
+            {:stop, :normal, {:error, :stale}, state}
+        end
+
+      {:error, rejection} ->
+        {:reply, {:rejected, rejection}, state}
+    end
+  end
+
+  defp apply_events(rules_state, events) do
+    new_rules_state = Enum.reduce(events, rules_state, &Rules.evolve(&2, &1))
+    {new_rules_state, Rules.view(new_rules_state)}
   end
 end
