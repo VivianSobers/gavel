@@ -2,6 +2,7 @@ import gavel_rules/auction
 import gavel_rules/types.{
   type Config, AlreadyHighBidder, BelowMinimum, Bid, BidAccepted, Close, Config,
   Emit, InvalidAmount, NotOpen, NotYetEnded, Opened, PlaceBid, SellerCannotBid,
+  TooLate,
 }
 import gleam/dict
 import gleam/option.{Some}
@@ -148,4 +149,29 @@ pub fn outbid_bidder_can_bid_again_test() {
 
   assert auction.decide(state, command, 30_000)
     == Ok(Emit([BidAccepted(Bid("req-3", "bob", 1200, 30_000))]))
+}
+
+pub fn bid_just_before_end_time_accepted_test() {
+  let config = sample_config(1000)
+  let state = auction.fold([Opened(config)])
+  let command = PlaceBid(request_id: "req-1", bidder: "bob", amount: 1000)
+
+  assert auction.decide(state, command, state.ends_at - 1)
+    == Ok(Emit([BidAccepted(Bid("req-1", "bob", 1000, state.ends_at - 1))]))
+}
+
+pub fn bid_at_end_time_rejected_test() {
+  let config = sample_config(1000)
+  let state = auction.fold([Opened(config)])
+  let command = PlaceBid(request_id: "req-1", bidder: "bob", amount: 1000)
+
+  assert auction.decide(state, command, state.ends_at) == Error(TooLate)
+}
+
+pub fn bid_after_end_time_rejected_test() {
+  let config = sample_config(1000)
+  let state = auction.fold([Opened(config)])
+  let command = PlaceBid(request_id: "req-1", bidder: "bob", amount: 1000)
+
+  assert auction.decide(state, command, state.ends_at + 1000) == Error(TooLate)
 }

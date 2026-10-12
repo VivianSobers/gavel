@@ -3,7 +3,7 @@ import gavel_rules/types.{
   type Command, type Config, type Decision, type Event, type Rejection,
   type State, AlreadyHighBidder, BelowMinimum, Bid, BidAccepted, Close, Emit,
   InvalidAmount, InvalidConfig, NotOpen, NotYetEnded, Open, Opened, Pending,
-  PlaceBid, SellerCannotBid, State,
+  PlaceBid, SellerCannotBid, State, TooLate,
 }
 import gleam/bool
 import gleam/dict
@@ -53,6 +53,7 @@ pub fn decide(
   case command {
     Close -> Error(NotYetEnded)
     PlaceBid(request_id, bidder, amount) -> {
+      use <- bool.guard(now >= state.ends_at, Error(TooLate))
       use <- bool.guard(is_seller(state, bidder), Error(SellerCannotBid))
       use <- bool.guard(is_high_bidder(state, bidder), Error(AlreadyHighBidder))
       use <- bool.guard(amount <= 0, Error(InvalidAmount))
