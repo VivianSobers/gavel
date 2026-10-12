@@ -25,7 +25,8 @@ defmodule Gavel.Store do
 
   @doc """
   Appends events for an auction starting at `expected_seq + 1` in one transaction.
-  Returns `{:ok, new_seq}` on success or `{:error, :conflict}` on a unique violation on the primary key.
+  Returns `{:ok, new_seq}` on success or `{:error, :conflict}` on a unique violation
+  on the sequence primary key or request id index.
   """
   @spec append(binary(), integer(), [Event.t()]) :: {:ok, integer()} | {:error, :conflict}
   def append(auction_id, expected_seq, events) do
@@ -48,7 +49,7 @@ defmodule Gavel.Store do
     end)
   rescue
     e in Ecto.ConstraintError ->
-      if e.type == :unique and e.constraint == "events_pkey" do
+      if e.type == :unique and e.constraint in ["events_pkey", "events_auction_request_index"] do
         {:error, :conflict}
       else
         reraise e, __STACKTRACE__

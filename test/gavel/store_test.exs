@@ -277,5 +277,35 @@ defmodule Gavel.StoreTest do
       assert loaded1.type == :opened
       assert loaded3 == colliding_event
     end
+
+    test "two different seqs with the same request id returns {:error, :conflict}", %{
+      auction_id: auction_id
+    } do
+      event1 = %Event{
+        type: :bid_accepted,
+        bid: %Bid{
+          request_id: "req-duplicate",
+          bidder: "bob",
+          amount: 200,
+          at: 500
+        }
+      }
+
+      event2 = %Event{
+        type: :bid_accepted,
+        bid: %Bid{
+          request_id: "req-duplicate",
+          bidder: "charlie",
+          amount: 300,
+          at: 600
+        }
+      }
+
+      assert {:ok, 2} = Store.append(auction_id, 1, [event1])
+      assert Store.append(auction_id, 2, [event2]) == {:error, :conflict}
+
+      assert {:ok, [_opened, stored_event]} = Store.load(auction_id)
+      assert stored_event == event1
+    end
   end
 end
