@@ -31,7 +31,8 @@ defmodule Gavel.Router do
            [auction_id, command],
            5_000
          ) do
-      {:error, :stale} when backoffs != [] ->
+      {:error, reason}
+      when reason in [:stale, {:erpc, :noconnection}, {:erpc, :timeout}] and backoffs != [] ->
         [sleep_ms | rest] = backoffs
         if sleep_ms > 0, do: Process.sleep(sleep_ms)
         do_dispatch(auction_id, command, rest)

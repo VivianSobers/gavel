@@ -146,6 +146,82 @@ defmodule Gavel.RouterTest do
              ] = FakeRpc.calls()
     end
 
+    test "retries when owner returns {:error, {:erpc, :noconnection}} and succeeds when accepted" do
+      accepted_reply = {:accepted, :fake_event}
+      start_supervised!({FakeRpc, [{:error, {:erpc, :noconnection}}, accepted_reply]})
+      Application.put_env(:gavel, :rpc, FakeRpc)
+
+      auction_id = Ecto.UUID.generate()
+      command = {:place_bid, "req-1", "alice", 1_000}
+      expected_owner = Ring.owner(Membership.ring(), auction_id)
+
+      assert Router.dispatch(auction_id, command) == accepted_reply
+
+      assert [
+               {^expected_owner, Gavel.Auction.Local, :command, [^auction_id, ^command], 5_000},
+               {^expected_owner, Gavel.Auction.Local, :command, [^auction_id, ^command], 5_000}
+             ] = FakeRpc.calls()
+    end
+
+    test "retries when owner returns {:error, {:erpc, :timeout}} and succeeds when accepted" do
+      accepted_reply = {:accepted, :fake_event}
+      start_supervised!({FakeRpc, [{:error, {:erpc, :timeout}}, accepted_reply]})
+      Application.put_env(:gavel, :rpc, FakeRpc)
+
+      auction_id = Ecto.UUID.generate()
+      command = {:place_bid, "req-1", "alice", 1_000}
+      expected_owner = Ring.owner(Membership.ring(), auction_id)
+
+      assert Router.dispatch(auction_id, command) == accepted_reply
+
+      assert [
+               {^expected_owner, Gavel.Auction.Local, :command, [^auction_id, ^command], 5_000},
+               {^expected_owner, Gavel.Auction.Local, :command, [^auction_id, ^command], 5_000}
+             ] = FakeRpc.calls()
+    end
+
+    test "retries routing to new owner after node loss causes {:erpc, :noconnection}" do
+      fake_peer = :peer_node@other_host
+      membership_pid = Process.whereis(Membership) || Membership
+      send(membership_pid, {:nodeup, fake_peer})
+
+      on_exit(fn ->
+        send(membership_pid, {:nodedown, fake_peer})
+      end)
+
+      assert eventually(fn -> fake_peer in Membership.members() end)
+
+      auction_id =
+        Enum.find_value(1..10_000, fn _ ->
+          candidate = Ecto.UUID.generate()
+          if Ring.owner(Membership.ring(), candidate) == fake_peer, do: candidate
+        end)
+
+      canned_accepted = {:accepted, :fake_event}
+
+      first_call = fn ->
+        send(membership_pid, {:nodedown, fake_peer})
+        eventually(fn -> fake_peer not in Membership.members() end)
+        {:error, {:erpc, :noconnection}}
+      end
+
+      start_supervised!({FakeRpc, [first_call, canned_accepted]})
+      Application.put_env(:gavel, :rpc, FakeRpc)
+
+      command = {:place_bid, "req-1", "alice", 1_000}
+      assert Router.dispatch(auction_id, command) == canned_accepted
+
+      calls = FakeRpc.calls()
+      assert length(calls) == 2
+
+      assert [
+               {^fake_peer, Gavel.Auction.Local, :command, [^auction_id, ^command], 5_000},
+               {new_owner, Gavel.Auction.Local, :command, [^auction_id, ^command], 5_000}
+             ] = calls
+
+      assert new_owner == node()
+    end
+
     test "re-reads ring on retry and routes to new owner if ring changes" do
       fake_peer = :peer_node@other_host
       membership_pid = Process.whereis(Membership) || Membership
