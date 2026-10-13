@@ -20,10 +20,13 @@ defmodule Gavel.Cluster.Membership do
   end
 
   @doc """
-  Returns the current hash ring from `:persistent_term`.
+  Returns the current hash ring from `:persistent_term`, or `:ring_override` if set.
   """
   def ring do
-    :persistent_term.get(@ring_key)
+    case Application.get_env(:gavel, :ring_override) do
+      nil -> :persistent_term.get(@ring_key)
+      override -> override
+    end
   end
 
   @doc """

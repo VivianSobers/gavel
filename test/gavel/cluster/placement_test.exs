@@ -1,7 +1,9 @@
 defmodule Gavel.Cluster.PlacementTest do
   use Gavel.DataCase, async: false
 
+  alias Gavel.Auction.Local
   alias Gavel.Cluster.Placement
+  alias Gavel.Cluster.Ring
   alias Gavel.Rules.Config
   alias Gavel.Rules.Event
   alias Gavel.Store
@@ -80,6 +82,51 @@ defmodule Gavel.Cluster.PlacementTest do
 
       # Closed auction is not started
       assert Registry.lookup(Gavel.Auction.Registry, closed_id) == []
+    end
+
+    test "stops local servers whose owner is another node" do
+      config = %Config{
+        title: "Test Item",
+        seller: "alice",
+        starting_price: 1_000,
+        reserve: 2_000,
+        ends_at: 1_700_000_000_000,
+        snipe_window_ms: 60_000,
+        extension_ms: 30_000,
+        max_extensions: 5
+      }
+
+      {:ok, id1} = Store.create_auction(%{config | title: "Item 1"})
+      {:ok, id2} = Store.create_auction(%{config | title: "Item 2"})
+
+      assert {:ok, pid1} = Local.ensure_started(id1)
+      assert {:ok, pid2} = Local.ensure_started(id2)
+      _ = :sys.get_state(pid1)
+      _ = :sys.get_state(pid2)
+
+      other_node =
+        Enum.find_value(Stream.iterate(1, &(&1 + 1)), fn i ->
+          candidate = :"other_node_#{i}@host"
+          r = Ring.new([node(), candidate])
+
+          if Ring.owner(r, id1) == node() and Ring.owner(r, id2) == candidate do
+            candidate
+          end
+        end)
+
+      ring = Ring.new([node(), other_node])
+
+      Application.put_env(:gavel, :ring_override, ring)
+      on_exit(fn -> Application.delete_env(:gavel, :ring_override) end)
+
+      result = Placement.reconcile()
+
+      assert result.stopped == [id2]
+      assert Registry.lookup(Gavel.Auction.Registry, id2) == []
+      refute Process.alive?(pid2)
+
+      assert [{^pid1, nil}] = Registry.lookup(Gavel.Auction.Registry, id1)
+      assert Process.alive?(pid1)
     end
   end
 end

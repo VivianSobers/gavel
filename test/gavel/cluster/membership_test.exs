@@ -55,5 +55,13 @@ defmodule Gavel.Cluster.MembershipTest do
       final_ring = Membership.ring()
       assert final_ring == initial_ring
     end
+
+    test "returns ring_override when set in app env" do
+      override_ring = Ring.new([:override@host])
+      Application.put_env(:gavel, :ring_override, override_ring)
+      on_exit(fn -> Application.delete_env(:gavel, :ring_override) end)
+
+      assert Membership.ring() == override_ring
+    end
   end
 end
