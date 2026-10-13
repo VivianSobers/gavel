@@ -129,4 +129,86 @@ defmodule Gavel.Cluster.PlacementTest do
       assert Process.alive?(pid1)
     end
   end
+
+  describe "cluster membership change and periodic placement" do
+    test "reconciles and emits telemetry when membership change is broadcast" do
+      test_pid = self()
+      handler_id = "test-placement-reconcile-#{System.unique_integer()}"
+
+      :telemetry.attach(
+        handler_id,
+        [:gavel, :placement, :reconcile],
+        fn event_name, measurements, metadata, _config ->
+          send(test_pid, {:telemetry_reconcile, event_name, measurements, metadata})
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      config = %Config{
+        title: "Cluster Open Item",
+        seller: "alice",
+        starting_price: 1_000,
+        reserve: 2_000,
+        ends_at: 1_700_000_000_000,
+        snipe_window_ms: 60_000,
+        extension_ms: 30_000,
+        max_extensions: 5
+      }
+
+      {:ok, open_id} = Store.create_auction(config)
+      assert Registry.lookup(Gavel.Auction.Registry, open_id) == []
+
+      Phoenix.PubSub.local_broadcast(Gavel.PubSub, "cluster", {:membership_changed, [node()]})
+
+      assert_receive {:telemetry_reconcile, [:gavel, :placement, :reconcile], measurements,
+                      metadata},
+                     1_000
+
+      assert is_integer(measurements.started)
+      assert is_integer(measurements.stopped)
+      assert measurements.started >= 1
+      assert measurements.stopped == 0
+      assert open_id in metadata.started
+
+      assert [{pid, nil}] = Registry.lookup(Gavel.Auction.Registry, open_id)
+      assert Process.alive?(pid)
+    end
+
+    test "reconciles on periodic interval" do
+      test_pid = self()
+      handler_id = "test-placement-interval-#{System.unique_integer()}"
+
+      :telemetry.attach(
+        handler_id,
+        [:gavel, :placement, :reconcile],
+        fn event_name, measurements, metadata, _config ->
+          send(test_pid, {:telemetry_interval, event_name, measurements, metadata})
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      {:ok, pid} =
+        Placement.start_link(
+          name: :"placement_interval_#{System.unique_integer()}",
+          placement_interval_ms: 20
+        )
+
+      on_exit(fn ->
+        if Process.alive?(pid) do
+          GenServer.stop(pid)
+        end
+      end)
+
+      assert_receive {:telemetry_interval, [:gavel, :placement, :reconcile], measurements,
+                      _metadata},
+                     500
+
+      assert is_integer(measurements.started)
+      assert is_integer(measurements.stopped)
+    end
+  end
 end

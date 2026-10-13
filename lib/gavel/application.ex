@@ -15,6 +15,7 @@ defmodule Gavel.Application do
       Gavel.Cluster.Membership,
       {Registry, keys: :unique, name: Gavel.Auction.Registry},
       {DynamicSupervisor, strategy: :one_for_one, name: Gavel.Auction.Supervisor},
+      Gavel.Cluster.Placement,
       # Start a worker by calling: Gavel.Worker.start_link(arg)
       # {Gavel.Worker, arg},
       # Start to serve requests, typically the last entry

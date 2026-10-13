@@ -1,5 +1,6 @@
 defmodule Gavel.Cluster.MembershipTest do
-  use ExUnit.Case, async: false
+  # DataCase: a membership change makes the running Placement query the database.
+  use Gavel.DataCase, async: false
 
   alias Gavel.Cluster.Membership
   alias Gavel.Cluster.Ring

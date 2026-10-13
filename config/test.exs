@@ -23,6 +23,7 @@ config :gavel, GavelWeb.Endpoint,
 config :gavel, clock: Gavel.Clock.Test
 config :gavel, linger_ms: 50
 config :gavel, router_backoff_ms: [0, 0, 0]
+config :gavel, placement_interval_ms: 0
 
 # Print only warnings and errors during test
 config :logger, level: :warning
