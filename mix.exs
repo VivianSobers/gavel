@@ -72,6 +72,7 @@ defmodule Gavel.MixProject do
       {:bandit, "~> 1.5"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:libring, "~> 1.7"},
+      {:libcluster, "~> 3.5"},
       {:stream_data, "~> 1.4", only: :test}
     ]
   end

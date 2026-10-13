@@ -22,6 +22,13 @@ end
 
 config :gavel, GavelWeb.Endpoint, http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
+if cluster_nodes = System.get_env("GAVEL_CLUSTER_NODES") do
+  case Gavel.Cluster.Topology.from_env(cluster_nodes) do
+    [] -> :ok
+    topologies -> config :libcluster, topologies: topologies
+  end
+end
+
 if config_env() == :dev do
   # Reload browser tabs when matching files change.
   config :gavel, GavelWeb.Endpoint,
