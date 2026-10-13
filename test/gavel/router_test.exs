@@ -105,14 +105,9 @@ defmodule Gavel.RouterTest do
       Application.put_env(:gavel, :rpc, FakeRpc)
 
       fake_peer = :peer_node@other_host
-      membership_pid = Process.whereis(Membership) || Membership
-      send(membership_pid, {:nodeup, fake_peer})
-
-      on_exit(fn ->
-        send(membership_pid, {:nodedown, fake_peer})
-      end)
-
-      assert eventually(fn -> fake_peer in Membership.members() end)
+      ring = Ring.new([node(), fake_peer])
+      Application.put_env(:gavel, :ring_override, ring)
+      on_exit(fn -> Application.delete_env(:gavel, :ring_override) end)
 
       auction_id =
         Enum.find_value(1..10_000, fn _ ->
@@ -182,14 +177,9 @@ defmodule Gavel.RouterTest do
 
     test "retries routing to new owner after node loss causes {:erpc, :noconnection}" do
       fake_peer = :peer_node@other_host
-      membership_pid = Process.whereis(Membership) || Membership
-      send(membership_pid, {:nodeup, fake_peer})
-
-      on_exit(fn ->
-        send(membership_pid, {:nodedown, fake_peer})
-      end)
-
-      assert eventually(fn -> fake_peer in Membership.members() end)
+      ring = Ring.new([node(), fake_peer])
+      Application.put_env(:gavel, :ring_override, ring)
+      on_exit(fn -> Application.delete_env(:gavel, :ring_override) end)
 
       auction_id =
         Enum.find_value(1..10_000, fn _ ->
@@ -200,8 +190,7 @@ defmodule Gavel.RouterTest do
       canned_accepted = {:accepted, :fake_event}
 
       first_call = fn ->
-        send(membership_pid, {:nodedown, fake_peer})
-        eventually(fn -> fake_peer not in Membership.members() end)
+        Application.put_env(:gavel, :ring_override, Ring.new([node()]))
         {:error, {:erpc, :noconnection}}
       end
 
@@ -224,14 +213,9 @@ defmodule Gavel.RouterTest do
 
     test "re-reads ring on retry and routes to new owner if ring changes" do
       fake_peer = :peer_node@other_host
-      membership_pid = Process.whereis(Membership) || Membership
-      send(membership_pid, {:nodeup, fake_peer})
-
-      on_exit(fn ->
-        send(membership_pid, {:nodedown, fake_peer})
-      end)
-
-      assert eventually(fn -> fake_peer in Membership.members() end)
+      ring = Ring.new([node(), fake_peer])
+      Application.put_env(:gavel, :ring_override, ring)
+      on_exit(fn -> Application.delete_env(:gavel, :ring_override) end)
 
       auction_id =
         Enum.find_value(1..10_000, fn _ ->
@@ -242,8 +226,7 @@ defmodule Gavel.RouterTest do
       canned_accepted = {:accepted, :fake_event}
 
       first_call = fn ->
-        send(membership_pid, {:nodedown, fake_peer})
-        eventually(fn -> fake_peer not in Membership.members() end)
+        Application.put_env(:gavel, :ring_override, Ring.new([node()]))
         {:error, :stale}
       end
 
@@ -385,20 +368,6 @@ defmodule Gavel.RouterTest do
 
       assert {:ok, events} = Store.load(auction_id)
       assert length(events) == 2
-    end
-  end
-
-  defp eventually(check, attempts \\ 50) do
-    cond do
-      check.() ->
-        true
-
-      attempts == 0 ->
-        false
-
-      true ->
-        Process.sleep(10)
-        eventually(check, attempts - 1)
     end
   end
 end

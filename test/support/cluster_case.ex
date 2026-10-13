@@ -11,6 +11,7 @@ defmodule Gavel.ClusterCase do
 
   alias Ecto.Adapters.SQL
   alias Ecto.Adapters.SQL.Sandbox
+  alias Gavel.Cluster.Membership
   alias Gavel.Repo
 
   using do
@@ -49,6 +50,10 @@ defmodule Gavel.ClusterCase do
   """
   def start_cluster(n \\ 3) do
     ensure_distribution!()
+
+    Application.put_env(:gavel, :ring_member, false)
+    Membership.leave_ring()
+
     cookie = Atom.to_charlist(Node.get_cookie())
     code_paths = :code.get_path()
 
@@ -79,6 +84,11 @@ defmodule Gavel.ClusterCase do
           :exit, _ -> :ok
         end
       end)
+
+      Membership.join_ring()
+      Application.delete_env(:gavel, :ring_member)
+      _ = :sys.get_state(Membership)
+      _ = :sys.get_state(Gavel.Cluster.Placement)
     end)
 
     # Connect all peers to each other
@@ -110,6 +120,7 @@ defmodule Gavel.ClusterCase do
 
     env =
       env
+      |> Keyword.delete(:ring_member)
       |> Keyword.put(Repo, repo_config)
       |> Keyword.put(GavelWeb.Endpoint, endpoint_config)
 

@@ -2,6 +2,7 @@ defmodule Gavel.Cluster.PlacementTest do
   use Gavel.DataCase, async: false
 
   alias Gavel.Auction.Local
+  alias Gavel.Clock.Test, as: ClockTest
   alias Gavel.Cluster.Placement
   alias Gavel.Cluster.Ring
   alias Gavel.Rules.Config
@@ -9,6 +10,8 @@ defmodule Gavel.Cluster.PlacementTest do
   alias Gavel.Store
 
   setup do
+    ClockTest.set(0)
+
     on_exit(fn ->
       for {_, pid, _, _} <- DynamicSupervisor.which_children(Gavel.Auction.Supervisor) do
         DynamicSupervisor.terminate_child(Gavel.Auction.Supervisor, pid)

@@ -7,54 +7,29 @@ defmodule Gavel.Cluster.MembershipTest do
 
   setup do
     Phoenix.PubSub.subscribe(Gavel.PubSub, "cluster")
-    initial_members = Membership.members()
-    initial_ring = Membership.ring()
-
-    on_exit(fn ->
-      if :fake@host in Membership.members() do
-        send(Membership, {:nodedown, :fake@host})
-      end
-    end)
-
-    %{initial_members: initial_members, initial_ring: initial_ring}
+    :ok
   end
 
   describe "membership" do
-    test "tracks nodeup and nodedown, updates ring, and broadcasts changes", %{
-      initial_members: initial_members,
-      initial_ring: initial_ring
-    } do
-      fake_node = :fake@host
+    test "tracks pg joins and leaves, updates ring, and broadcasts changes" do
+      pid = spawn(fn -> Process.sleep(:infinity) end)
+      on_exit(fn -> Process.exit(pid, :kill) end)
 
-      refute fake_node in initial_members
+      :pg.join(Gavel.Cluster, :ring_members, pid)
 
-      pid = Process.whereis(Membership) || Membership
-      send(pid, {:nodeup, fake_node})
+      assert_receive {:membership_changed, members}
+      assert members == [node()]
+      assert Membership.members() == [node()]
+      assert Membership.ring() == Ring.new([node()])
 
-      assert_receive {:membership_changed, members_after_up}
-      assert fake_node in members_after_up
+      :pg.leave(Gavel.Cluster, :ring_members, pid)
 
-      current_members = Membership.members()
-      assert fake_node in current_members
-      assert current_members == members_after_up
-      assert current_members == Enum.sort(current_members)
+      assert_receive {:membership_changed, members_after_leave}
+      assert members_after_leave == [node()]
+      assert Membership.members() == [node()]
+      assert Membership.ring() == Ring.new([node()])
 
-      new_ring = Membership.ring()
-      assert new_ring != initial_ring
-      assert Ring.new(current_members) == new_ring
-
-      send(pid, {:nodedown, fake_node})
-
-      assert_receive {:membership_changed, members_after_down}
-      refute fake_node in members_after_down
-
-      final_members = Membership.members()
-      refute fake_node in final_members
-      assert final_members == members_after_down
-      assert final_members == initial_members
-
-      final_ring = Membership.ring()
-      assert final_ring == initial_ring
+      _ = :sys.get_state(Gavel.Cluster.Placement)
     end
 
     test "returns ring_override when set in app env" do
@@ -63,6 +38,33 @@ defmodule Gavel.Cluster.MembershipTest do
       on_exit(fn -> Application.delete_env(:gavel, :ring_override) end)
 
       assert Membership.ring() == override_ring
+    end
+  end
+end
+
+defmodule Gavel.Cluster.MembershipClusterTest do
+  use Gavel.ClusterCase
+
+  alias Gavel.Cluster.Membership
+
+  test "runner is not a ring member while peers are" do
+    peers = start_cluster(3)
+    runner = node()
+
+    for peer <- peers do
+      members = :erpc.call(peer, Membership, :members, [])
+      refute runner in members
+
+      for p <- peers do
+        assert p in members
+      end
+    end
+
+    runner_members = Membership.members()
+    refute runner in runner_members
+
+    for p <- peers do
+      assert p in runner_members
     end
   end
 end

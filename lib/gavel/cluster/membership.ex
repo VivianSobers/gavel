@@ -8,6 +8,8 @@ defmodule Gavel.Cluster.Membership do
 
   alias Gavel.Cluster.Ring
 
+  @scope Gavel.Cluster
+  @group :ring_members
   @pubsub Gavel.PubSub
   @cluster_topic "cluster"
   @ring_key {Gavel.Cluster, :ring}
@@ -36,34 +38,69 @@ defmodule Gavel.Cluster.Membership do
     GenServer.call(__MODULE__, :members)
   end
 
+  @doc """
+  Leaves the ring members group.
+  """
+  def leave_ring do
+    case Process.whereis(__MODULE__) do
+      nil ->
+        :ok
+
+      pid ->
+        case :pg.leave(@scope, @group, pid) do
+          :ok -> :ok
+          :not_joined -> :ok
+        end
+    end
+  end
+
+  @doc """
+  Joins the ring members group.
+  """
+  def join_ring do
+    case Process.whereis(__MODULE__) do
+      nil -> :ok
+      pid -> :pg.join(@scope, @group, pid)
+    end
+  end
+
   @impl true
   def init(_opts) do
-    if Node.alive?() do
-      :net_kernel.monitor_nodes(true)
+    ring_member? = Application.get_env(:gavel, :ring_member, true)
+
+    if ring_member? do
+      :pg.join(@scope, @group, self())
     end
 
-    members = initial_members()
+    {ref, pids} = :pg.monitor(@scope, @group)
+
+    nodes = Enum.map(pids, &node/1)
+    nodes = if ring_member?, do: [node() | nodes], else: nodes
+
+    members =
+      nodes
+      |> Enum.uniq()
+      |> Enum.sort()
+
     ring = Ring.new(members)
     :persistent_term.put(@ring_key, ring)
 
-    {:ok, %{members: MapSet.new(members)}}
+    {:ok, %{monitor_ref: ref, members: members}}
   end
 
   @impl true
   def handle_call(:members, _from, state) do
-    {:reply, Enum.sort(state.members), state}
+    {:reply, state.members, state}
   end
 
   @impl true
-  def handle_info({:nodeup, node}, state) do
-    new_members = MapSet.put(state.members, node)
-    update_ring_and_broadcast(new_members, state)
+  def handle_info({ref, :join, :ring_members, _pids}, %{monitor_ref: ref} = state) do
+    update_ring_and_broadcast(state)
   end
 
   @impl true
-  def handle_info({:nodedown, node}, state) do
-    new_members = MapSet.delete(state.members, node)
-    update_ring_and_broadcast(new_members, state)
+  def handle_info({ref, :leave, :ring_members, _pids}, %{monitor_ref: ref} = state) do
+    update_ring_and_broadcast(state)
   end
 
   @impl true
@@ -71,19 +108,19 @@ defmodule Gavel.Cluster.Membership do
     {:noreply, state}
   end
 
-  defp update_ring_and_broadcast(members_set, state) do
-    sorted_members = Enum.sort(members_set)
-    ring = Ring.new(sorted_members)
+  defp update_ring_and_broadcast(state) do
+    members =
+      @scope
+      |> :pg.get_members(@group)
+      |> Enum.map(&node/1)
+      |> Enum.uniq()
+      |> Enum.sort()
+
+    ring = Ring.new(members)
     :persistent_term.put(@ring_key, ring)
 
-    Phoenix.PubSub.local_broadcast(@pubsub, @cluster_topic, {:membership_changed, sorted_members})
+    Phoenix.PubSub.local_broadcast(@pubsub, @cluster_topic, {:membership_changed, members})
 
-    {:noreply, %{state | members: members_set}}
-  end
-
-  defp initial_members do
-    [node() | Node.list()]
-    |> Enum.uniq()
-    |> Enum.sort()
+    {:noreply, %{state | members: members}}
   end
 end

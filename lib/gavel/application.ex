@@ -13,6 +13,7 @@ defmodule Gavel.Application do
       {DNSCluster, query: Application.get_env(:gavel, :dns_cluster_query) || :ignore},
       cluster_supervisor(),
       {Phoenix.PubSub, name: Gavel.PubSub},
+      %{id: :pg, start: {:pg, :start_link, [Gavel.Cluster]}},
       Gavel.Cluster.Membership,
       {Registry, keys: :unique, name: Gavel.Auction.Registry},
       {DynamicSupervisor, strategy: :one_for_one, name: Gavel.Auction.Supervisor},
