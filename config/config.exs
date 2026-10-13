@@ -10,7 +10,8 @@ import Config
 config :gavel,
   ecto_repos: [Gavel.Repo],
   generators: [timestamp_type: :utc_datetime, binary_id: true],
-  linger_ms: 30_000
+  linger_ms: 30_000,
+  router_backoff_ms: [50, 150, 400]
 
 # Configure the endpoint
 config :gavel, GavelWeb.Endpoint,

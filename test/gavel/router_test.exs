@@ -13,8 +13,12 @@ defmodule Gavel.RouterTest do
   defmodule FakeRpc do
     use Agent
 
+    def start_link(replies) when is_list(replies) do
+      Agent.start_link(fn -> %{calls: [], replies: replies} end, name: __MODULE__)
+    end
+
     def start_link(reply) do
-      Agent.start_link(fn -> %{calls: [], reply: reply} end, name: __MODULE__)
+      start_link([reply])
     end
 
     def calls do
@@ -23,19 +27,43 @@ defmodule Gavel.RouterTest do
 
     def call(node, module, fun, args, timeout) do
       Agent.get_and_update(__MODULE__, fn state ->
-        {state.reply, %{state | calls: [{node, module, fun, args, timeout} | state.calls]}}
+        call_entry = {node, module, fun, args, timeout}
+
+        case state.replies do
+          [action | [_ | _] = rest] when is_function(action, 0) ->
+            {action.(), %{state | calls: [call_entry | state.calls], replies: rest}}
+
+          [action] when is_function(action, 0) ->
+            {action.(), %{state | calls: [call_entry | state.calls]}}
+
+          [reply | [_ | _] = rest] ->
+            {reply, %{state | calls: [call_entry | state.calls], replies: rest}}
+
+          [last] ->
+            {last, %{state | calls: [call_entry | state.calls]}}
+
+          [] ->
+            {nil, %{state | calls: [call_entry | state.calls]}}
+        end
       end)
     end
   end
 
   setup do
     previous_rpc = Application.get_env(:gavel, :rpc)
+    previous_backoff = Application.get_env(:gavel, :router_backoff_ms)
 
     on_exit(fn ->
       if previous_rpc do
         Application.put_env(:gavel, :rpc, previous_rpc)
       else
         Application.delete_env(:gavel, :rpc)
+      end
+
+      if previous_backoff do
+        Application.put_env(:gavel, :router_backoff_ms, previous_backoff)
+      else
+        Application.delete_env(:gavel, :router_backoff_ms)
       end
 
       for {_, pid, _, _} <- DynamicSupervisor.which_children(Gavel.Auction.Supervisor) do
@@ -99,6 +127,82 @@ defmodule Gavel.RouterTest do
 
       assert [{^fake_peer, Gavel.Auction.Local, :command, [^auction_id, ^command], 5_000}] =
                FakeRpc.calls()
+    end
+
+    test "retries when owner returns {:error, :stale} and succeeds when accepted" do
+      accepted_reply = {:accepted, :fake_event}
+      start_supervised!({FakeRpc, [{:error, :stale}, accepted_reply]})
+      Application.put_env(:gavel, :rpc, FakeRpc)
+
+      auction_id = Ecto.UUID.generate()
+      command = {:place_bid, "req-1", "alice", 1_000}
+      expected_owner = Ring.owner(Membership.ring(), auction_id)
+
+      assert Router.dispatch(auction_id, command) == accepted_reply
+
+      assert [
+               {^expected_owner, Gavel.Auction.Local, :command, [^auction_id, ^command], 5_000},
+               {^expected_owner, Gavel.Auction.Local, :command, [^auction_id, ^command], 5_000}
+             ] = FakeRpc.calls()
+    end
+
+    test "re-reads ring on retry and routes to new owner if ring changes" do
+      fake_peer = :peer_node@other_host
+      membership_pid = Process.whereis(Membership) || Membership
+      send(membership_pid, {:nodeup, fake_peer})
+
+      on_exit(fn ->
+        send(membership_pid, {:nodedown, fake_peer})
+      end)
+
+      assert eventually(fn -> fake_peer in Membership.members() end)
+
+      auction_id =
+        Enum.find_value(1..10_000, fn _ ->
+          candidate = Ecto.UUID.generate()
+          if Ring.owner(Membership.ring(), candidate) == fake_peer, do: candidate
+        end)
+
+      canned_accepted = {:accepted, :fake_event}
+
+      first_call = fn ->
+        send(membership_pid, {:nodedown, fake_peer})
+        eventually(fn -> fake_peer not in Membership.members() end)
+        {:error, :stale}
+      end
+
+      start_supervised!({FakeRpc, [first_call, canned_accepted]})
+      Application.put_env(:gavel, :rpc, FakeRpc)
+
+      command = {:place_bid, "req-1", "alice", 1_000}
+      assert Router.dispatch(auction_id, command) == canned_accepted
+
+      calls = FakeRpc.calls()
+      assert length(calls) == 2
+
+      assert [
+               {^fake_peer, Gavel.Auction.Local, :command, [^auction_id, ^command], 5_000},
+               {new_owner, Gavel.Auction.Local, :command, [^auction_id, ^command], 5_000}
+             ] = calls
+
+      assert new_owner == node()
+    end
+
+    test "backs off according to :router_backoff_ms application environment" do
+      Application.put_env(:gavel, :router_backoff_ms, [50])
+      accepted_reply = {:accepted, :fake_event}
+      start_supervised!({FakeRpc, [{:error, :stale}, accepted_reply]})
+      Application.put_env(:gavel, :rpc, FakeRpc)
+
+      auction_id = Ecto.UUID.generate()
+      command = {:place_bid, "req-1", "alice", 1_000}
+
+      start_time = System.monotonic_time(:millisecond)
+      assert Router.dispatch(auction_id, command) == accepted_reply
+      elapsed = System.monotonic_time(:millisecond) - start_time
+
+      assert elapsed >= 40
+      assert length(FakeRpc.calls()) == 2
     end
   end
 
