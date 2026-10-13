@@ -68,6 +68,20 @@ defmodule Gavel.Auction.LocalTest do
     assert length(DynamicSupervisor.which_children(Gavel.Auction.Supervisor)) == 1
   end
 
+  describe "ensure_started/1" do
+    test "starts server when not running and reuses existing server", %{auction_id: auction_id} do
+      assert Registry.lookup(Gavel.Auction.Registry, auction_id) == []
+
+      assert {:ok, pid1} = Local.ensure_started(auction_id)
+      assert Process.alive?(pid1)
+      assert [{^pid1, nil}] = Registry.lookup(Gavel.Auction.Registry, auction_id)
+
+      assert {:ok, pid2} = Local.ensure_started(auction_id)
+      assert pid1 == pid2
+      assert length(DynamicSupervisor.which_children(Gavel.Auction.Supervisor)) == 1
+    end
+  end
+
   defp eventually(check, attempts \\ 50) do
     cond do
       check.() ->

@@ -9,7 +9,7 @@ defmodule Gavel.Auction.Local do
   Finds or starts an auction server and sends it a command with a 5-second timeout.
   """
   def command(auction_id, command) do
-    with {:ok, pid} <- find_or_start_server(auction_id) do
+    with {:ok, pid} <- ensure_started(auction_id) do
       try do
         GenServer.call(pid, {:command, command}, 5_000)
       catch
@@ -27,7 +27,11 @@ defmodule Gavel.Auction.Local do
     end
   end
 
-  defp find_or_start_server(auction_id) do
+  @doc """
+  Ensures that the auction server for the given auction ID is started locally.
+  """
+  @spec ensure_started(binary()) :: {:ok, pid()} | {:error, term()}
+  def ensure_started(auction_id) do
     case Registry.lookup(Gavel.Auction.Registry, auction_id) do
       # The Registry drops a stopped server's entry asynchronously, so a lookup
       # right after a stop can still return the dead pid.
