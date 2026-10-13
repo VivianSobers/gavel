@@ -7,6 +7,7 @@ defmodule Gavel.Router do
   alias Gavel.Cluster.Ring
 
   @default_backoff_ms [50, 150, 400]
+  @retryable [:stale, {:erpc, :noconnection}, {:erpc, :timeout}]
 
   @doc """
   Returns the cluster node currently owning the given auction ID.
@@ -31,15 +32,18 @@ defmodule Gavel.Router do
            [auction_id, command],
            5_000
          ) do
-      {:error, reason}
-      when reason in [:stale, {:erpc, :noconnection}, {:erpc, :timeout}] and backoffs != [] ->
-        [sleep_ms | rest] = backoffs
-        if sleep_ms > 0, do: Process.sleep(sleep_ms)
-        do_dispatch(auction_id, command, rest)
-
-      reply ->
-        reply
+      {:error, reason} when reason in @retryable -> retry(auction_id, command, backoffs)
+      reply -> reply
     end
+  end
+
+  # Ownership may have moved (stale owner, lost or slow node): re-read the ring
+  # after a backoff, and give up once the backoffs are used.
+  defp retry(_auction_id, _command, []), do: {:error, :unavailable}
+
+  defp retry(auction_id, command, [sleep_ms | rest]) do
+    Process.sleep(sleep_ms)
+    do_dispatch(auction_id, command, rest)
   end
 
   defp rpc do

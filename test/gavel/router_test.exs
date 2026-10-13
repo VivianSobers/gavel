@@ -280,6 +280,76 @@ defmodule Gavel.RouterTest do
       assert elapsed >= 40
       assert length(FakeRpc.calls()) == 2
     end
+
+    test "gives up after fourth failure and returns {:error, :unavailable} when retries are exhausted" do
+      start_supervised!({FakeRpc, [{:error, :stale}, {:error, :stale}, {:error, :stale}]})
+      Application.put_env(:gavel, :rpc, FakeRpc)
+
+      auction_id = Ecto.UUID.generate()
+      command = {:place_bid, "req-1", "alice", 1_000}
+      expected_owner = Ring.owner(Membership.ring(), auction_id)
+
+      assert Router.dispatch(auction_id, command) == {:error, :unavailable}
+
+      assert [
+               {^expected_owner, Gavel.Auction.Local, :command, [^auction_id, ^command], 5_000},
+               {^expected_owner, Gavel.Auction.Local, :command, [^auction_id, ^command], 5_000},
+               {^expected_owner, Gavel.Auction.Local, :command, [^auction_id, ^command], 5_000},
+               {^expected_owner, Gavel.Auction.Local, :command, [^auction_id, ^command], 5_000}
+             ] = FakeRpc.calls()
+    end
+
+    test "returns {:error, :unavailable} when node loss or timeout retries are exhausted" do
+      start_supervised!(
+        {FakeRpc,
+         [
+           {:error, {:erpc, :noconnection}},
+           {:error, {:erpc, :timeout}},
+           {:error, {:erpc, :noconnection}}
+         ]}
+      )
+
+      Application.put_env(:gavel, :rpc, FakeRpc)
+
+      auction_id = Ecto.UUID.generate()
+      command = {:place_bid, "req-1", "alice", 1_000}
+
+      assert Router.dispatch(auction_id, command) == {:error, :unavailable}
+      assert length(FakeRpc.calls()) == 4
+    end
+
+    test "returns {:rejected, :too_late} after one call without retrying" do
+      start_supervised!({FakeRpc, {:rejected, :too_late}})
+      Application.put_env(:gavel, :rpc, FakeRpc)
+
+      auction_id = Ecto.UUID.generate()
+      command = {:place_bid, "req-1", "alice", 1_000}
+      expected_owner = Ring.owner(Membership.ring(), auction_id)
+
+      assert Router.dispatch(auction_id, command) == {:rejected, :too_late}
+
+      assert [
+               {^expected_owner, Gavel.Auction.Local, :command, [^auction_id, ^command], 5_000}
+             ] = FakeRpc.calls()
+    end
+
+    test "returns accepted reply after one call without retrying" do
+      accepted_reply =
+        {:accepted, %Bid{request_id: "req-1", bidder: "alice", amount: 1_000}, %View{seq: 2}}
+
+      start_supervised!({FakeRpc, accepted_reply})
+      Application.put_env(:gavel, :rpc, FakeRpc)
+
+      auction_id = Ecto.UUID.generate()
+      command = {:place_bid, "req-1", "alice", 1_000}
+      expected_owner = Ring.owner(Membership.ring(), auction_id)
+
+      assert Router.dispatch(auction_id, command) == accepted_reply
+
+      assert [
+               {^expected_owner, Gavel.Auction.Local, :command, [^auction_id, ^command], 5_000}
+             ] = FakeRpc.calls()
+    end
   end
 
   describe "single-node integration with real rpc on node()" do
