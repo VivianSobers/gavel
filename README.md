@@ -1,6 +1,6 @@
 # gavel
 
-gavel is a clustered realtime auction service written in Elixir and Gleam. Each open auction runs as its own Erlang process, and bidders follow a live bid ladder in the browser. Any app node can be killed while auctions are running; the surviving nodes take over its auctions and rebuild them from the bid log.
+gavel, is a clustered realtime auction service written in Elixir and Gleam. Each open auction runs as its own Erlang process, and bidders follow a live bid ladder in the browser. Any app node can be killed while auctions are running; the surviving nodes take over its auctions and rebuild them from the bid log.
 
 Status: early. The toolchain, the Phoenix app and the Gleam rules package are in place. The auction rules, clustering and web UI are being built.
 
