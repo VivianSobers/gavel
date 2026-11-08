@@ -56,6 +56,7 @@ defmodule Gavel.ClusterCase do
 
     cookie = Atom.to_charlist(Node.get_cookie())
     code_paths = :code.get_path()
+    logger_level = Application.get_env(:logger, :level)
 
     peers =
       for i <- 1..n do
@@ -64,6 +65,7 @@ defmodule Gavel.ClusterCase do
         Process.register(pid, node)
 
         :erpc.call(node, :code, :add_paths, [code_paths])
+        :erpc.call(node, Application, :put_env, [:logger, :level, logger_level])
         :erpc.call(node, Application, :ensure_all_started, [:elixir])
 
         copy_gavel_env(node)
