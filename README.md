@@ -14,6 +14,8 @@ When finished, gavel promises the following, and a checker that runs after every
 4. Replaying an auction's log through the rules core accepts every event, so the log is a valid history under the rules.
 5. Every auction whose end time has passed gets exactly one close event. It is the last event, and the winner is the highest bid if the reserve is met.
 
+Known limitation of guarantee 3: if a request's write is still in flight on one server when its retry reaches a second server for the same auction, the second server can reject the retry just before the first write commits. Two live servers only exist briefly while nodes join or leave. A per-auction lease would close the gap.
+
 Postgres provides durability and ordering through a sequence fence on each auction's log. The BEAM side handles availability, serialized validation of each auction's bids, close timers and fan-out to watchers.
 
 ## Requirements
