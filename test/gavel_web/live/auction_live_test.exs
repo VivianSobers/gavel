@@ -82,6 +82,71 @@ defmodule GavelWeb.AuctionLiveTest do
     view |> form("#bid-form", bid: %{bidder: bidder, amount: amount}) |> render_submit()
   end
 
+  describe "auction list" do
+    test "shows open auctions with their price and a link", %{conn: conn} do
+      id = create_auction()
+      bid(id, "r1", "bob", 2_500)
+
+      {:ok, _view, html} = live(conn, ~p"/")
+
+      assert html =~ "Rare Coin"
+      assert html =~ "$25.00"
+      assert html =~ ~p"/auctions/#{id}"
+    end
+
+    test "does not show closed auctions", %{conn: conn} do
+      id = create_auction(title: "Finished Lot")
+      close(id)
+
+      {:ok, _view, html} = live(conn, ~p"/")
+
+      refute html =~ "Finished Lot"
+    end
+
+    test "updates the price when a bid arrives", %{conn: conn} do
+      id = create_auction()
+      {:ok, view, _html} = live(conn, ~p"/")
+
+      bid(id, "r1", "bob", 4_200)
+
+      assert render(view) =~ "$42.00"
+    end
+
+    test "removes an auction when it closes", %{conn: conn} do
+      id = create_auction()
+      {:ok, view, html} = live(conn, ~p"/")
+      assert html =~ "Rare Coin"
+
+      close(id)
+
+      refute render(view) =~ "Rare Coin"
+    end
+  end
+
+  describe "auction list edge cases" do
+    test "says when auctions could not be loaded", %{conn: conn} do
+      create_auction()
+      Application.put_env(:gavel, :rpc, DownRpc)
+      on_exit(fn -> Application.delete_env(:gavel, :rpc) end)
+
+      {:ok, _view, html} = live(conn, ~p"/")
+
+      assert html =~ "Some auctions are unavailable"
+      refute html =~ "No open auctions"
+    end
+
+    test "a late open update does not bring back a closed auction", %{conn: conn} do
+      id = create_auction()
+      {:view, open_view} = Router.dispatch(id, :view)
+      {:ok, view, _html} = live(conn, ~p"/")
+
+      close(id)
+      send(view.pid, {:auction_updated, id, open_view})
+
+      refute render(view) =~ "Rare Coin"
+    end
+  end
+
   describe "creating an auction" do
     @valid %{
       title: "Old Map",
@@ -90,6 +155,16 @@ defmodule GavelWeb.AuctionLiveTest do
       reserve: "",
       duration_minutes: "60"
     }
+
+    test "appears on an open auction list right away", %{conn: conn} do
+      {:ok, list, _html} = live(conn, ~p"/")
+      {:ok, view, _html} = live(conn, ~p"/auctions/new")
+
+      view |> form("#auction-form", auction: @valid) |> render_submit()
+      assert_redirect(view)
+
+      assert render(list) =~ "Old Map"
+    end
 
     test "refuses a duration over a year", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/auctions/new")
