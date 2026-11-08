@@ -120,7 +120,9 @@ defmodule Gavel.ClusterCase do
 
     env =
       env
-      |> Keyword.delete(:ring_member)
+      # Dropping :clock leaves peers on the system clock: Gavel.Clock.Test is an
+      # Agent that only runs on the test runner.
+      |> Keyword.drop([:ring_member, :clock])
       |> Keyword.put(Repo, repo_config)
       |> Keyword.put(GavelWeb.Endpoint, endpoint_config)
 
