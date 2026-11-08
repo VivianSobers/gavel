@@ -66,4 +66,35 @@ defmodule Gavel.Auction.ServerFenceTest do
     assert view2.seq == 4
     assert view2.high_bid.bidder == "dan"
   end
+
+  test "a stale server does not reject a bid that is already in the log", %{
+    auction_id: auction_id
+  } do
+    assert {:accepted, _bid, %{seq: 2}} =
+             Local.command(auction_id, {:place_bid, "req-1", "bob", 1_000})
+
+    [{server_pid, _}] = Registry.lookup(Gavel.Auction.Registry, auction_id)
+    ref = Process.monitor(server_pid)
+
+    # Behind the server's back carol outbids bob and bob retakes the lead, so the
+    # server still believes bob's first bid is high and that he cannot bid again.
+    at = 1_699_000_000_001
+    carol = %Bid{request_id: "req-2", bidder: "carol", amount: 5_000, at: at}
+    bob = %Bid{request_id: "req-3", bidder: "bob", amount: 9_000, at: at}
+
+    assert {:ok, 4} =
+             Store.append(auction_id, 2, [
+               %Event{type: :bid_accepted, bid: carol},
+               %Event{type: :bid_accepted, bid: bob}
+             ])
+
+    assert {:error, :stale} =
+             Local.command(auction_id, {:place_bid, "req-3", "bob", 9_000})
+
+    assert_receive {:DOWN, ^ref, :process, ^server_pid, :normal}
+
+    # A retry reaches a fresh server, which returns the original outcome.
+    assert {:duplicate, ^bob, %{seq: 4}} =
+             Local.command(auction_id, {:place_bid, "req-3", "bob", 9_000})
+  end
 end

@@ -88,6 +88,16 @@ defmodule Gavel.Store do
   end
 
   @doc """
+  Returns the sequence number of the auction's latest event, or 0 if it has none.
+  """
+  @spec head_seq(binary()) :: integer()
+  def head_seq(auction_id) do
+    Repo.one(
+      from(e in EventRecord, where: e.auction_id == ^auction_id, select: coalesce(max(e.seq), 0))
+    )
+  end
+
+  @doc """
   Lists the IDs of all auctions that have not been closed (`closed_at IS NULL`).
   """
   @spec open_auction_ids() :: [binary()]

@@ -79,7 +79,11 @@ defmodule Gavel.Auction.Server do
         {:reply, {:duplicate, bid, state.view}, state}
 
       {:error, rejection} ->
-        {:reply, {:rejected, rejection}, state}
+        if current?(state) do
+          {:reply, {:rejected, rejection}, state}
+        else
+          {:stop, :normal, {:error, :stale}, state}
+        end
     end
   end
 
@@ -124,6 +128,17 @@ defmodule Gavel.Auction.Server do
       {:error, :conflict} ->
         :stale
     end
+  end
+
+  # Rejections never reach the sequence fence, so a server that missed another
+  # writer's events must not answer from memory: the request may already be logged.
+  defp current?(%{view: %{status: :closed}}), do: true
+
+  defp current?(%{auction_id: id, view: %{seq: seq}}) do
+    Store.head_seq(id) == seq
+  rescue
+    # A failed check cannot prove this server is current, so it must not reject.
+    DBConnection.ConnectionError -> false
   end
 
   defp reply({:place_bid, _, _, _}, _events, view), do: {:accepted, view.high_bid, view}
