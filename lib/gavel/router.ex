@@ -7,7 +7,7 @@ defmodule Gavel.Router do
   alias Gavel.Cluster.Ring
 
   @default_backoff_ms [50, 150, 400]
-  @retryable [:stale, {:erpc, :noconnection}, {:erpc, :timeout}]
+  @retryable [:stale, :outcome_unknown, {:erpc, :noconnection}, {:erpc, :timeout}]
 
   @doc """
   Returns the cluster node currently owning the given auction ID.

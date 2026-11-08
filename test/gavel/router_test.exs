@@ -141,6 +141,18 @@ defmodule Gavel.RouterTest do
              ] = FakeRpc.calls()
     end
 
+    test "retries when owner returns {:error, :outcome_unknown} and succeeds when duplicate" do
+      duplicate_reply = {:duplicate, :fake_bid, :fake_view}
+      start_supervised!({FakeRpc, [{:error, :outcome_unknown}, duplicate_reply]})
+      Application.put_env(:gavel, :rpc, FakeRpc)
+
+      auction_id = Ecto.UUID.generate()
+      command = {:place_bid, "req-1", "alice", 1_000}
+
+      assert Router.dispatch(auction_id, command) == duplicate_reply
+      assert length(FakeRpc.calls()) == 2
+    end
+
     test "retries when owner returns {:error, {:erpc, :noconnection}} and succeeds when accepted" do
       accepted_reply = {:accepted, :fake_event}
       start_supervised!({FakeRpc, [{:error, {:erpc, :noconnection}}, accepted_reply]})
