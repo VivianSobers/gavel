@@ -87,8 +87,14 @@ defmodule Gavel.ClusterCase do
         end
       end)
 
-      Membership.join_ring()
-      Application.delete_env(:gavel, :ring_member)
+      # Open auctions left behind would be adopted by the runner once it rejoins.
+      try do
+        truncate_tables()
+      after
+        Membership.join_ring()
+        Application.delete_env(:gavel, :ring_member)
+      end
+
       _ = :sys.get_state(Membership)
       _ = :sys.get_state(Gavel.Cluster.Placement)
     end)
