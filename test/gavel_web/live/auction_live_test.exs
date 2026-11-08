@@ -82,6 +82,87 @@ defmodule GavelWeb.AuctionLiveTest do
     view |> form("#bid-form", bid: %{bidder: bidder, amount: amount}) |> render_submit()
   end
 
+  describe "creating an auction" do
+    @valid %{
+      title: "Old Map",
+      seller: "alice",
+      starting_price: "10.00",
+      reserve: "",
+      duration_minutes: "60"
+    }
+
+    test "refuses a duration over a year", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/auctions/new")
+
+      html =
+        view
+        |> form("#auction-form", auction: %{@valid | duration_minutes: "9999999999"})
+        |> render_submit()
+
+      assert html =~ "up to one year"
+      assert Store.open_auction_ids() == []
+    end
+
+    test "opens it and goes to its page", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/auctions/new")
+
+      view |> form("#auction-form", auction: @valid) |> render_submit()
+
+      {path, _flash} = assert_redirect(view)
+      assert [id] = Store.open_auction_ids()
+      assert path == ~p"/auctions/#{id}"
+
+      assert {:view, created} = Router.dispatch(id, :view)
+      assert created.title == "Old Map"
+      assert created.minimum_next_bid == 1_000
+      assert created.ends_at == @now + 3_600_000
+    end
+
+    test "stores an optional reserve in cents", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/auctions/new")
+
+      view |> form("#auction-form", auction: %{@valid | reserve: "50"}) |> render_submit()
+
+      assert_redirect(view)
+      assert [id] = Store.open_auction_ids()
+      assert {:ok, [opened]} = Store.load(id)
+      assert opened.config.reserve == 5_000
+    end
+
+    test "explains an amount it cannot read", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/auctions/new")
+
+      html =
+        view
+        |> form("#auction-form", auction: %{@valid | starting_price: "abc"})
+        |> render_submit()
+
+      assert html =~ "Starting price must be a dollar amount"
+      assert Store.open_auction_ids() == []
+    end
+
+    test "explains a config the rules reject", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/auctions/new")
+
+      html = view |> form("#auction-form", auction: %{@valid | title: ""}) |> render_submit()
+
+      assert html =~ "Check the title"
+      assert Store.open_auction_ids() == []
+    end
+
+    test "explains a duration it cannot read", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/auctions/new")
+
+      html =
+        view
+        |> form("#auction-form", auction: %{@valid | duration_minutes: "0"})
+        |> render_submit()
+
+      assert html =~ "Duration must be a whole number of minutes"
+      assert Store.open_auction_ids() == []
+    end
+  end
+
   describe "auction page" do
     test "shows the auction and its minimum bid", %{conn: conn} do
       id = create_auction()

@@ -22,6 +22,7 @@ defmodule GavelWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
+    live "/auctions/new", AuctionLive.New
     live "/auctions/:id", AuctionLive.Show
   end
 
