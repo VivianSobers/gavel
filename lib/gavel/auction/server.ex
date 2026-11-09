@@ -27,6 +27,23 @@ defmodule Gavel.Auction.Server do
     {:via, Registry, {Gavel.Auction.Registry, auction_id}}
   end
 
+  @doc """
+  Returns the PubSub topic carrying each event of one auction.
+  """
+  def auction_topic(auction_id), do: "auction:" <> auction_id
+
+  @doc """
+  Returns the PubSub topic carrying a summary update for every auction.
+  """
+  def auctions_topic, do: "auctions"
+
+  @doc """
+  Tells auction lists about the latest view of an auction.
+  """
+  def announce(auction_id, view) do
+    Phoenix.PubSub.broadcast(@pubsub, auctions_topic(), {:auction_updated, auction_id, view})
+  end
+
   @impl true
   def init(auction_id) do
     {:ok,
@@ -79,7 +96,11 @@ defmodule Gavel.Auction.Server do
         {:reply, {:duplicate, bid, state.view}, state}
 
       {:error, rejection} ->
-        {:reply, {:rejected, rejection}, state}
+        if current?(state) do
+          {:reply, {:rejected, rejection}, state}
+        else
+          {:stop, :normal, {:error, :stale}, state}
+        end
     end
   end
 
@@ -126,6 +147,17 @@ defmodule Gavel.Auction.Server do
     end
   end
 
+  # Rejections never reach the sequence fence, so a server that missed another
+  # writer's events must not answer from memory: the request may already be logged.
+  defp current?(%{view: %{status: :closed}}), do: true
+
+  defp current?(%{auction_id: id, view: %{seq: seq}}) do
+    Store.head_seq(id) == seq
+  rescue
+    # A failed check cannot prove this server is current, so it must not reject.
+    DBConnection.ConnectionError -> false
+  end
+
   defp reply({:place_bid, _, _, _}, _events, view), do: {:accepted, view.high_bid, view}
   defp reply(:close, events, view), do: {:closed, find_winner(events), view}
 
@@ -159,10 +191,10 @@ defmodule Gavel.Auction.Server do
 
   defp broadcast_events(id, events, view) do
     for event <- events do
-      Phoenix.PubSub.broadcast(@pubsub, "auction:" <> id, {:auction_event, id, event, view})
+      Phoenix.PubSub.broadcast(@pubsub, auction_topic(id), {:auction_event, id, event, view})
     end
 
-    Phoenix.PubSub.broadcast(@pubsub, "auctions", {:auction_updated, id, view})
+    announce(id, view)
   end
 
   defp find_winner(events) do

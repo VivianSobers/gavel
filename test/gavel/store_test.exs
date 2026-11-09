@@ -353,6 +353,12 @@ defmodule Gavel.StoreTest do
     end
   end
 
+  describe "head_seq/1" do
+    test "returns 0 when the auction has no events" do
+      assert Store.head_seq(Ecto.UUID.generate()) == 0
+    end
+  end
+
   describe "open_auction_ids/0" do
     test "returns ids of auctions where closed_at is nil" do
       open_config = %Config{

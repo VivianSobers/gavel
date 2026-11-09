@@ -68,6 +68,30 @@ defmodule Gavel.Auction.LocalTest do
     assert length(DynamicSupervisor.which_children(Gavel.Auction.Supervisor)) == 1
   end
 
+  test "returns stale when placement stops the server during a call", %{auction_id: auction_id} do
+    assert {:ok, pid} = Local.ensure_started(auction_id)
+    :sys.suspend(pid)
+
+    task = Task.async(fn -> Local.command(auction_id, :view) end)
+    assert eventually(fn -> Process.info(pid, :message_queue_len) == {:message_queue_len, 1} end)
+
+    assert :ok = DynamicSupervisor.terminate_child(Gavel.Auction.Supervisor, pid)
+
+    assert {:error, :stale} = Task.await(task)
+  end
+
+  test "returns stale when the server crashes during a call", %{auction_id: auction_id} do
+    assert {:ok, pid} = Local.ensure_started(auction_id)
+    :sys.suspend(pid)
+
+    task = Task.async(fn -> Local.command(auction_id, :view) end)
+    assert eventually(fn -> Process.info(pid, :message_queue_len) == {:message_queue_len, 1} end)
+
+    Process.exit(pid, :kill)
+
+    assert {:error, :outcome_unknown} = Task.await(task)
+  end
+
   describe "ensure_started/1" do
     test "starts server when not running and reuses existing server", %{auction_id: auction_id} do
       assert Registry.lookup(Gavel.Auction.Registry, auction_id) == []

@@ -10,21 +10,24 @@ defmodule Gavel.Auction.Local do
   """
   def command(auction_id, command) do
     with {:ok, pid} <- ensure_started(auction_id) do
-      try do
-        GenServer.call(pid, {:command, command}, 5_000)
-      catch
-        :exit, {{:shutdown, :not_found}, _} ->
-          {:error, :not_found}
-
-        :exit, {:shutdown, :not_found} ->
-          {:error, :not_found}
-
-        # The server stopped between lookup and call (for example after losing
-        # the fence); the caller retries and gets a fresh server.
-        :exit, {reason, _} when reason in [:noproc, :normal] ->
-          {:error, :stale}
-      end
+      GenServer.call(pid, {:command, command}, 5_000)
     end
+  catch
+    :exit, {{:shutdown, :not_found}, _} ->
+      {:error, :not_found}
+
+    :exit, {:shutdown, :not_found} ->
+      {:error, :not_found}
+
+    # The server stopped before replying (it lost the fence or placement moved
+    # it); the caller retries and gets a fresh server.
+    :exit, {reason, _} when reason in [:noproc, :normal, :shutdown] ->
+      {:error, :stale}
+
+    # A crash or timeout may have happened after the commit. Retrying under the
+    # same request id is safe and returns the original outcome.
+    :exit, _reason ->
+      {:error, :outcome_unknown}
   end
 
   @doc """

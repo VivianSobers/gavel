@@ -21,7 +21,9 @@ defmodule GavelWeb.Router do
   scope "/", GavelWeb do
     pipe_through :browser
 
-    get "/", PageController, :home
+    live "/", AuctionLive.Index
+    live "/auctions/new", AuctionLive.New
+    live "/auctions/:id", AuctionLive.Show
   end
 
   # Other scopes may use custom stacks.
